@@ -102,9 +102,65 @@ export const mockAmicizie: Amicizia[] = [
   { id: 'am3', richiedente_id: 'a0000000-0000-0000-0000-000000000003', destinatario_id: 'me', stato: 'in_attesa', created_at: '', amico: mockGiocatori[2] },
 ];
 
-// Giocatore "io" fittizio per la modalità demo (senza login)
+// Giocatore "io" fittizio per la modalità demo (senza login).
+// Allineato alla demo: "Prova Prova", in prova, score 0.00, fascia Spark.
 export const mockMe: Giocatore = {
-  id: 'me', user_id: 'demo', nome: 'Tu', cognome: 'Giocatore', genere: 'M', data_nascita: null,
-  telefono: null, email: 'demo@starsleague.it', profilo: { nickname: 'You', ranking: 3.5 },
-  sport_preferiti: ['Padel'], mano_dominante: 'destro', posizione: 'destra', numero_tessera: 'SL-0001',
+  id: 'me', user_id: 'demo', nome: 'Prova', cognome: 'Prova', genere: 'M', data_nascita: null,
+  telefono: null, email: 'demo@starsleague.it', profilo: { nickname: undefined, ranking: 0 },
+  sport_preferiti: ['Padel'], mano_dominante: 'destro', posizione: 'destra', numero_tessera: 'PSL-0001',
 };
+
+// ---- Stars League: dati demo aggiuntivi ----
+
+export const mockCentriNazionali = [
+  'Padel Hero Versilia', 'Lucca Padel SSD', 'Padel Plus Massa', 'Padel Hero Pisa',
+  'PSL Firenze', 'PSL Roma', 'Dodo Club Massarosa', 'Centro Padel Taddei',
+];
+
+export const mockStars = {
+  fascia: 'Spark' as const,
+  ranking_globale: null,
+  score: 0,
+  stato_stima: 'in_prova' as const,
+  stima_pts: 1000,
+  posizione_nazionale: null,
+  punti_circuito: 0,
+  trend: 0,
+  partite_giocate: 0,
+  partite_confermate: 0,
+  vittorie: 0,
+};
+
+export const mockStarsCoin = { saldo: 10 };
+
+export const mockTessera = {
+  numero: 'PSL-2026-0001',
+  stato: 'da_rinnovare' as const,
+  scadenza: '2026-12-31',
+  quota: 25,
+};
+
+export const mockCircuito = {
+  nome: 'Circuito Primavera',
+  stagione: '2026',
+  centri: 47,
+  giocatori: 2340,
+  progresso: 64,
+};
+
+export const mockClassificaNazionale = [
+  { posizione: 1, giocatore_id: 'n1', nome: 'Elena Marchi', centro: 'PSL Firenze', punti: 1240, trend: 2 },
+  { posizione: 2, giocatore_id: 'n2', nome: 'Lorenzo Mori', centro: 'Padel Hero', punti: 1180, trend: 0 },
+  { posizione: 3, giocatore_id: 'n3', nome: 'Valentina Ricci', centro: 'PSL Roma', punti: 1090, trend: 1 },
+  { posizione: 4, giocatore_id: 'n4', nome: 'Fabio Russo', centro: 'PSL Firenze', punti: 980, trend: -1 },
+  { posizione: 5, giocatore_id: 'n5', nome: 'Chiara Romano', centro: 'Lucca Padel SSD', punti: 910, trend: 3 },
+  { posizione: 6, giocatore_id: 'n6', nome: 'Marco Bianchi', centro: 'Padel Plus Massa', punti: 870, trend: 0 },
+  { posizione: 7, giocatore_id: 'n7', nome: 'Giulia Verdi', centro: 'Padel Hero Pisa', punti: 820, trend: -2 },
+];
+
+export const mockProdottiShop = [
+  { id: 's1', nome: 'Borraccia ufficiale Stars League 750ml', costo: 40, icona: '💧' },
+  { id: 's2', nome: 'Clinic Online 1h con Coach Pro', costo: 120, icona: '🎓' },
+  { id: 's3', nome: 'Sconto quota tesseramento PSL 2026', costo: 200, icona: '💳' },
+  { id: 's4', nome: 'Overgrip Stars League (x3)', costo: 25, icona: '🎾' },
+];

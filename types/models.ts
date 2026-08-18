@@ -140,6 +140,63 @@ export interface CoinSaldo {
   saldo: number;
 }
 
+// ---- Concetti Stars League (allineati alla demo) ----
+
+// Fascia di gioco: Spark (non ancora stimato) poi 1★..8★
+export type Fascia = 'Spark' | '1★' | '2★' | '3★' | '4★' | '5★' | '6★' | '7★' | '8★';
+
+export type StatoStima = 'in_prova' | 'stimato';
+
+export interface StarsProfilo {
+  fascia: Fascia;
+  ranking_globale: number | null; // posizione nazionale, null se in prova
+  score: number; // punteggio ranking (es. 0.00)
+  stato_stima: StatoStima;
+  stima_pts: number; // reputazione/stima 0-1000
+  posizione_nazionale: number | null;
+  punti_circuito: number;
+  trend: number; // +3, -1, 0...
+  partite_giocate: number;
+  partite_confermate: number;
+  vittorie: number;
+}
+
+export interface StarsCoin {
+  saldo: number;
+}
+
+export interface Tessera {
+  numero: string;
+  stato: 'attiva' | 'scaduta' | 'da_rinnovare';
+  scadenza: string | null; // YYYY-MM-DD
+  quota: number;
+}
+
+export interface CircuitoNazionale {
+  nome: string; // "Circuito Primavera"
+  stagione: string; // "2026"
+  centri: number;
+  giocatori: number;
+  progresso: number; // 0-100
+}
+
+export interface RigaClassificaNazionale {
+  posizione: number;
+  giocatore_id: string;
+  nome: string;
+  centro: string;
+  punti: number;
+  trend: number;
+}
+
+export interface Badge {
+  id: string;
+  nome: string;
+  descrizione: string;
+  icona: string; // emoji
+  ottenuto: boolean;
+}
+
 export type StatoAmicizia = 'in_attesa' | 'accettata';
 
 export interface Amicizia {

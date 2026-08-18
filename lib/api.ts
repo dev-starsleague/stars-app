@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import * as mock from './mockData';
+import { fasciaDaScore } from './stars';
 import type {
   Campo, Centro, ClassificaMensile, EventoCustom, Giocatore,
   Prenotazione, RankingGiocatore, Amicizia,
@@ -157,6 +158,42 @@ export async function accettaAmicizia(id: string): Promise<void> {
   if (USE_MOCK) return;
   await supabase.from('amicizie').update({ stato: 'accettata' }).eq('id', id);
 }
+
+// ---------- Stars League ----------
+export async function getStars(giocatoreId: string): Promise<import('../types/models').StarsProfilo> {
+  if (USE_MOCK) return mock.mockStars;
+  // Deriva da ranking reale se presente; altderimenti "in prova".
+  const { data } = await supabase.from('ranking_giocatori')
+    .select('*').eq('giocatore_id', giocatoreId).eq('sport', 'padel').maybeSingle();
+  const score = data?.ranking ?? 0;
+  const stimato = data?.stato === 'attivo';
+  return {
+    fascia: fasciaDaScore(score, stimato),
+    ranking_globale: null, score, stato_stima: stimato ? 'stimato' : 'in_prova',
+    stima_pts: 1000, posizione_nazionale: null, punti_circuito: 0, trend: 0,
+    partite_giocate: 0, partite_confermate: 0, vittorie: 0,
+  };
+}
+
+export async function getCircuito(): Promise<import('../types/models').CircuitoNazionale> {
+  return mock.mockCircuito; // il circuito nazionale è un aggregato: per ora demo
+}
+
+export async function getClassificaNazionale(): Promise<import('../types/models').RigaClassificaNazionale[]> {
+  return mock.mockClassificaNazionale;
+}
+
+export async function getStarsCoin(giocatoreId: string): Promise<number> {
+  if (USE_MOCK) return mock.mockStarsCoin.saldo;
+  const { data } = await supabase.from('coin_saldi').select('saldo').eq('giocatore_id', giocatoreId).maybeSingle();
+  return data?.saldo ?? 0;
+}
+
+export async function getTessera(): Promise<import('../types/models').Tessera> {
+  return mock.mockTessera;
+}
+
+export function getProdottiShop() { return mock.mockProdottiShop; }
 
 export function meseCorrente(): string {
   const d = new Date();

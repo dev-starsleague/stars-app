@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
+import { PhoneFrame } from '../components/PhoneFrame';
 import { Colors } from '../constants/theme';
 
 function RootNav() {
@@ -41,10 +42,12 @@ function RootNav() {
 export default function Layout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <StatusBar style="light" />
-        <RootNav />
-      </AuthProvider>
+      <PhoneFrame>
+        <AuthProvider>
+          <StatusBar style="light" />
+          <RootNav />
+        </AuthProvider>
+      </PhoneFrame>
     </SafeAreaProvider>
   );
 }
