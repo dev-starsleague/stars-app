@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Padel Stars League",
+    "slug": "padel-stars-league",
+    "scheme": "pslapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E314A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.starsleague.padel"
+    },
+    "android": {
+      "package": "com.starsleague.padel",
+      "adaptiveIcon": {
+        "backgroundColor": "#1E314A"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
