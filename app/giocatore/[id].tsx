@@ -35,7 +35,7 @@ export default function GiocatoreProfilo() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={Colors.white} /></Pressable>
+        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
         <Text style={s.title}>Profilo</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -78,13 +78,13 @@ function cap(v?: string | null) { return v ? v.charAt(0).toUpperCase() + v.slice
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  title: { color: Colors.white, fontSize: Font.h2, fontWeight: '800' },
+  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   scroll: { padding: Spacing.lg, paddingTop: 0 },
   header: { alignItems: 'center', gap: 6, marginTop: Spacing.md },
-  nome: { color: Colors.white, fontSize: Font.h1, fontWeight: '800', marginTop: Spacing.sm },
+  nome: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800', marginTop: Spacing.sm },
   stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
   stat: { flex: 1, backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: Colors.navyLine + '55' },
   statValue: { color: Colors.gold, fontSize: Font.h2, fontWeight: '900' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  rowValue: { color: Colors.white, fontWeight: '600', fontSize: Font.body },
+  rowValue: { color: Colors.navyDeep, fontWeight: '600', fontSize: Font.body },
 });

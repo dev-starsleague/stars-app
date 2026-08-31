@@ -1,12 +1,49 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from './supabase';
-import { getMioProfilo, USE_MOCK } from './api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { apiGet, apiPost } from './apiClient';
+import { getMioProfilo, isMock, setDemoDataMode } from './api';
 import type { Giocatore } from '../types/models';
 import { mockMe } from './mockData';
 
+// Nessuna autenticazione reale per ora (decisione esplicita: si aggiungerà
+// in un secondo momento). La "sessione" è solo l'id del Giocatore scelto/
+// creato con email+nome, senza verifica della password — persistito in
+// locale così l'app ricorda chi sei tra un riavvio e l'altro.
+const SESSION_KEY = 'stars-app:giocatore-id';
+
+async function leggiGiocatoreIdSalvato(): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null;
+    } catch {
+      return null;
+    }
+  }
+  return AsyncStorage.getItem(SESSION_KEY);
+}
+
+async function salvaGiocatoreId(id: string | null): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      if (id) localStorage.setItem(SESSION_KEY, id);
+      else localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // storage non disponibile (es. SSR/build): nessuna sessione persistita
+    }
+    return;
+  }
+  if (id) await AsyncStorage.setItem(SESSION_KEY, id);
+  else await AsyncStorage.removeItem(SESSION_KEY);
+}
+
+interface Sessione {
+  giocatoreId: string;
+}
+
 interface AuthState {
-  session: Session | null;
+  session: Sessione | null;
   me: Giocatore | null;
   loading: boolean;
   demoMode: boolean;
@@ -21,61 +58,76 @@ const Ctx = createContext<AuthState>({} as AuthState);
 export const useAuth = () => useContext(Ctx);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Sessione | null>(null);
   const [me, setMe] = useState<Giocatore | null>(null);
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
 
-  const refreshMe = async () => {
-    const g = await getMioProfilo();
+  const caricaProfilo = async (giocatoreId: string) => {
+    const g = await getMioProfilo(giocatoreId);
     setMe(g);
   };
 
-  useEffect(() => {
-    if (!isSupabaseConfigured) {
-      // Nessuna chiave: l'app funziona in modalità demo (mock) senza login reale.
-      setLoading(false);
-      return;
-    }
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session) await refreshMe();
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
-      setSession(s);
-      if (s) await refreshMe();
-      else setMe(null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return error ? { error: error.message } : {};
+  const refreshMe = async () => {
+    if (!session) return;
+    await caricaProfilo(session.giocatoreId);
   };
 
-  const signUp = async (email: string, password: string, nome: string, cognome: string) => {
-    const { error } = await supabase.auth.signUp({
-      email, password, options: { data: { nome, cognome } },
-    });
-    return error ? { error: error.message } : {};
+  useEffect(() => {
+    (async () => {
+      const idSalvato = await leggiGiocatoreIdSalvato();
+      if (idSalvato) {
+        setSession({ giocatoreId: idSalvato });
+        await caricaProfilo(idSalvato);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const signIn = async (email: string, _password: string) => {
+    const { data, error } = await apiGet<any[]>('/giocatori', { email });
+    if (error) return { error: error.message };
+    const trovato = data && data.length > 0 ? data[0] : null;
+    if (!trovato) return { error: 'Email o password non corretti.' };
+    setDemoDataMode(false);
+    setDemoMode(false);
+    await salvaGiocatoreId(trovato.id);
+    setSession({ giocatoreId: trovato.id });
+    await caricaProfilo(trovato.id);
+    return {};
+  };
+
+  const signUp = async (email: string, _password: string, nome: string, cognome: string) => {
+    const { data: esistenti, error: errRicerca } = await apiGet<any[]>('/giocatori', { email });
+    if (errRicerca) return { error: errRicerca.message };
+    if (esistenti && esistenti.length > 0) return { error: 'Email già registrata: prova ad accedere.' };
+
+    const { data: nuovo, error } = await apiPost<any>('/giocatori', { nome, cognome, email });
+    if (error) return { error: error.message };
+    setDemoDataMode(false);
+    setDemoMode(false);
+    await salvaGiocatoreId(nuovo.id);
+    setSession({ giocatoreId: nuovo.id });
+    await caricaProfilo(nuovo.id);
+    return {};
   };
 
   const signOut = async () => {
-    if (isSupabaseConfigured) await supabase.auth.signOut();
+    setDemoDataMode(false);
+    await salvaGiocatoreId(null);
     setDemoMode(false);
     setMe(null);
     setSession(null);
   };
 
   const enterDemo = () => {
+    setDemoDataMode(true);
     setDemoMode(true);
     setMe(mockMe);
   };
 
   const value: AuthState = {
-    session, me, loading, demoMode: demoMode || USE_MOCK,
+    session, me, loading, demoMode: demoMode || isMock(),
     signIn, signUp, signOut, enterDemo, refreshMe,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

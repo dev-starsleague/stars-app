@@ -1,0 +1,21 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+npm-debug.*
+.DS_Store
+*.pem
+
+# env locali (mai committare l'URL reale del backend/eventuali segreti)
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Xcode / Android build locali
+ios/
+android/
+*.orig.*

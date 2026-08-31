@@ -4,12 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { getStars, getTessera, getMiePrenotazioni } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted } from '../../components/ui';
+import { Card, Muted } from '../../components/ui';
 import { COLORE_FASCIA } from '../../lib/stars';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { Colors, Radius, Spacing, Font, CORNER_SMOOTHING, Glass } from '../../constants/theme';
 import type { StarsProfilo, Tessera, Prenotazione } from '../../types/models';
 
 const GIORNI_SETT = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
@@ -43,7 +44,7 @@ export default function Home() {
 
         {/* Tessera Digitale */}
         <Pressable onPress={() => router.push('/(tabs)/profilo')}>
-          <View style={s.tesseraCard}>
+          <Card>
             <Text style={s.tesseraLabel}>TESSERA</Text>
             <Text style={s.tesseraTitle}>Tessera Digitale</Text>
             <Muted style={{ color: Colors.slateLight }}>
@@ -52,12 +53,12 @@ export default function Home() {
             <View style={s.dots}>
               {[0, 1, 2, 3].map((i) => <View key={i} style={[s.dot, i === 3 && s.dotActive]} />)}
             </View>
-          </View>
+          </Card>
         </Pressable>
 
         {/* Due card: Friendly / Competitivo */}
         <View style={s.pairRow}>
-          <View style={s.miniCard}>
+          <Card style={s.miniCard}>
             <View style={s.miniHead}>
               <Text style={s.miniLabelWhite}>FRIENDLY</Text>
               <Ionicons name="trending-up" size={16} color={Colors.slate} />
@@ -67,9 +68,9 @@ export default function Home() {
             <View style={s.miniDivider} />
             <Text style={[s.miniFascia, { color: COLORE_FASCIA[stars?.fascia ?? 'Spark'] }]}>{stars?.fascia ?? 'Spark'}</Text>
             <Muted>-1.00 cat. sup.</Muted>
-          </View>
+          </Card>
 
-          <View style={s.miniCard}>
+          <Card style={s.miniCard}>
             <View style={s.miniHead}>
               <Text style={s.miniLabelGold}>COMPETITIVO</Text>
               <Ionicons name="trending-up" size={16} color={Colors.gold} />
@@ -79,7 +80,7 @@ export default function Home() {
             <View style={s.miniDivider} />
             <Muted>In arrivo</Muted>
             <Muted>Nuovo ranking PSL</Muted>
-          </View>
+          </Card>
         </View>
 
         {/* Calendario mese */}
@@ -92,13 +93,18 @@ export default function Home() {
             <Text style={s.vedi}>vedi →</Text>
           </Pressable>
         </View>
-        <Pressable onPress={() => router.push('/(tabs)/prenota')} style={s.ctaCard}>
-          <View style={s.ctaIcon}><Ionicons name="add" size={22} color={Colors.navyDeep} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.ctaTitle}>Prenota un campo</Text>
-            <Muted>Trova uno slot libero nei centri PSL</Muted>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.slate} />
+        <Pressable onPress={() => router.push('/(tabs)/prenota')}>
+          <Card style={s.ctaCard}>
+            <View style={s.ctaIcon}>
+              <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.compact, cornerSmoothing: CORNER_SMOOTHING, fillColor: Colors.gold }} />
+              <Ionicons name="add" size={22} color={Colors.navyDeep} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.ctaTitle}>Prenota un campo</Text>
+              <Muted>Trova uno slot libero nei centri PSL</Muted>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.slate} />
+          </Card>
         </Pressable>
 
         <View style={{ height: 20 }} />
@@ -151,24 +157,27 @@ function CalendarWidget({ prenotazioni, onPick }: { prenotazioni: Prenotazione[]
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.lg },
-  tip: { color: Colors.white, fontSize: Font.h1, fontWeight: '900', marginBottom: Spacing.lg, lineHeight: 34 },
-  tesseraCard: { backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.xl, borderWidth: 1, borderColor: Colors.navyLine + '55', overflow: 'hidden' },
+  tip: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '900', marginBottom: Spacing.lg, lineHeight: 34 },
   tesseraLabel: { color: Colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 1 },
-  tesseraTitle: { color: Colors.white, fontSize: Font.h1, fontWeight: '900', marginVertical: 6 },
+  tesseraTitle: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '900', marginVertical: 6 },
   dots: { flexDirection: 'row', gap: 6, marginTop: Spacing.lg, alignSelf: 'flex-end' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.slate + '66' },
   dotActive: { width: 22, backgroundColor: Colors.gold },
   pairRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md },
-  miniCard: { flex: 1, backgroundColor: Colors.navyDeep, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
+  miniCard: { flex: 1 },
   miniHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  miniLabelWhite: { color: Colors.white, fontSize: Font.small, fontWeight: '800', letterSpacing: 0.5 },
+  miniLabelWhite: { color: Colors.navyDeep, fontSize: Font.small, fontWeight: '800', letterSpacing: 0.5 },
   miniLabelGold: { color: Colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 0.5 },
   miniSub: { color: Colors.slate, fontSize: Font.tiny, fontWeight: '700', marginTop: Spacing.md, letterSpacing: 0.5 },
-  miniBig: { color: Colors.white, fontSize: 30, fontWeight: '900', marginTop: 2 },
+  miniBig: { color: Colors.navyDeep, fontSize: 30, fontWeight: '900', marginTop: 2 },
   miniBigGold: { color: Colors.gold, fontSize: 24, fontWeight: '900', marginTop: 2 },
   miniDivider: { height: 1, backgroundColor: Colors.navyLine + '55', marginVertical: Spacing.sm },
   miniFascia: { fontSize: Font.body, fontWeight: '800' },
-  calCard: { backgroundColor: '#F7F8FA', borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md },
+  calCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.card, padding: Spacing.lg, marginTop: Spacing.md,
+    borderWidth: 1, borderColor: Colors.navyLine + '22',
+    boxShadow: Glass.shadow,
+  } as any,
   calHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   calTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
   calWeek: { flexDirection: 'row' },
@@ -181,9 +190,9 @@ const s = StyleSheet.create({
   calTodayText: { color: Colors.gold, fontWeight: '900' },
   calDotPren: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.gold, marginTop: 2 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing.xl, marginBottom: Spacing.md },
-  sectionTitle: { color: Colors.white, fontSize: Font.h2, fontWeight: '800' },
+  sectionTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   vedi: { color: Colors.gold, fontWeight: '700', fontSize: Font.small },
-  ctaCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  ctaIcon: { width: 44, height: 44, borderRadius: Radius.md, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
-  ctaTitle: { color: Colors.white, fontSize: Font.body, fontWeight: '700' },
+  ctaCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  ctaIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  ctaTitle: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
 });

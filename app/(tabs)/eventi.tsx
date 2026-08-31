@@ -4,18 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
-import { getEventi, iscrivitiEvento, USE_MOCK } from '../../lib/api';
+import { getEventi, iscrivitiEvento } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Muted } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import type { EventoCustom } from '../../types/models';
 
-type TabE = 'arrivo' | 'miei' | 'passati';
+type TabE = 'attivi' | 'miei' | 'passati';
 type Cat = 'tutti' | 'lezioni' | 'friendly' | 'competitivi' | 'clinic';
 
 export default function Eventi() {
   const { me, demoMode } = useAuth();
-  const [tabE, setTabE] = useState<TabE>('arrivo');
+  const [tabE, setTabE] = useState<TabE>('attivi');
   const [cat, setCat] = useState<Cat>('tutti');
   const [q, setQ] = useState('');
   const [eventi, setEventi] = useState<EventoCustom[]>([]);
@@ -33,9 +33,12 @@ export default function Eventi() {
     else Alert.alert('Errore', res.error ?? 'Iscrizione non riuscita.');
   };
 
-  const inArrivo = eventi.filter((e) => e.stato === 'ready');
-  const passati = eventi.filter((e) => e.stato === 'in_corso' || e.stato === 'completed');
-  const base = tabE === 'arrivo' ? inArrivo : tabE === 'miei' ? eventi.filter((e) => iscritti[e.id]) : passati;
+  // "Attivi" = aperti alle iscrizioni o già in corso — cioè non ancora
+  // conclusi. draft/cancelled non compaiono da nessuna parte: draft è
+  // configurazione dello staff mai pubblicata, cancelled non serve al giocatore.
+  const attivi = eventi.filter((e) => e.stato === 'ready' || e.stato === 'in_corso');
+  const passati = eventi.filter((e) => e.stato === 'completed');
+  const base = tabE === 'attivi' ? attivi : tabE === 'miei' ? eventi.filter((e) => iscritti[e.id]) : passati;
   const filtrati = base.filter((e) => q ? e.nome.toLowerCase().includes(q.toLowerCase()) : true);
 
   return (
@@ -47,8 +50,8 @@ export default function Eventi() {
         {/* Card filtri bianca */}
         <View style={s.filterCard}>
           <View style={s.subtabs}>
-            <Pressable style={[s.subtab, tabE === 'arrivo' && s.subtabActive]} onPress={() => setTabE('arrivo')}>
-              <Text style={[s.subtabText, tabE === 'arrivo' && s.subtabTextActive]}>In arrivo ({inArrivo.length})</Text>
+            <Pressable style={[s.subtab, tabE === 'attivi' && s.subtabActive]} onPress={() => setTabE('attivi')}>
+              <Text style={[s.subtabText, tabE === 'attivi' && s.subtabTextActive]}>Attivi ({attivi.length})</Text>
             </Pressable>
             <Pressable style={[s.subtab, tabE === 'miei' && s.subtabActive]} onPress={() => setTabE('miei')}>
               <Text style={[s.subtabText, tabE === 'miei' && s.subtabTextActive]}>I miei ({Object.values(iscritti).filter(Boolean).length})</Text>
@@ -79,7 +82,7 @@ export default function Eventi() {
           </ScrollView>
         </View>
 
-        {USE_MOCK || demoMode ? (
+        {demoMode ? (
           <View style={s.demoBadge}><Text style={s.demoText}>Dati demo</Text></View>
         ) : null}
 
@@ -142,7 +145,7 @@ const s = StyleSheet.create({
   card: { backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.navyLine + '44' },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   cardIcon: { width: 44, height: 44, borderRadius: Radius.md, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
-  cardName: { color: Colors.white, fontSize: Font.h3, fontWeight: '800' },
+  cardName: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
   cardDesc: { color: Colors.slateLight, fontSize: Font.small, marginTop: Spacing.md, lineHeight: 20 },
   pill: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.pill },
   pillText: { fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },

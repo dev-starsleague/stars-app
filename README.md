@@ -1,61 +1,54 @@
 # Padel Stars League — App Giocatori
 
-App mobile/web per i giocatori del centro, costruita con **Expo (React Native)** + **Supabase** (database e login) e pronta per il deploy su **Vercel**.
+App mobile/web per i giocatori del centro, costruita con **Expo (React Native)** e pronta per il deploy su **Vercel**.
 
 Funzioni: prenotazione campi, iscrizione a eventi/tornei, classifiche mensili e ranking, profilo personale e amici.
 
-> Il **gestionale** (pannello staff) resta separato: questa app è solo per i giocatori. Le due parti condividono lo stesso modello dati, ma qui il database vive su Supabase con login vero.
+> Il **gestionale** (`stars-system`, pannello staff) e questa app condividono **lo stesso backend**: l'API FastAPI di `stars-system/backend` (SQLite in sviluppo, Postgres in futuro). Non c'è un database separato per l'app — nessuna dipendenza da Supabase.
 
 ---
 
 ## Modalità demo (funziona subito, senza configurare niente)
 
-Se non imposti le chiavi Supabase, l'app parte lo stesso in **modalità demo**: dati finti, nessun login reale. Utile per vedere subito com'è fatta, anche appena deployata su Vercel. Per avere login e dati reali, segui i passi sotto.
+Se non imposti `EXPO_PUBLIC_API_URL`, l'app parte lo stesso in **modalità demo**: dati finti, nessun accesso ai dati reali. Utile per vedere subito com'è fatta, anche appena deployata su Vercel senza backend raggiungibile. Per avere dati reali, segui i passi sotto.
 
 ---
 
-## 1. Carica il progetto su GitHub
+## 1. Avvia il backend condiviso
 
-Dalla cartella del progetto:
+Nella cartella di `stars-system`:
 
 ```bash
-git init
-git add .
-git commit -m "Padel Stars League - app giocatori"
-git branch -M main
-git remote add origin https://github.com/TUO-UTENTE/padel-stars-league.git
-git push -u origin main
+cd backend
+uvicorn app.main:app --reload
 ```
 
-(Prima crea un repository vuoto su GitHub — senza README — e usa il suo URL qui sopra.)
+Il backend risponde su `http://127.0.0.1:8000`. Non serve creare nulla: l'app usa le stesse API/tabelle del gestionale (giocatori, prenotazioni, ranking, classifica, campi, eventi, coin...).
 
 ---
 
-## 2. Crea il backend su Supabase
-
-1. Vai su [supabase.com](https://supabase.com) → **New project**. Scegli nome e password del database.
-2. A progetto creato, apri **SQL Editor** (icona a sinistra).
-3. Apri il file [`supabase/schema.sql`](supabase/schema.sql) di questo progetto, copia tutto, incollalo nell'editor e premi **Run**. Crea tabelle, trigger e permessi (RLS).
-4. (Opzionale ma consigliato per vedere subito dati) Apri [`supabase/seed.sql`](supabase/seed.sql), copia, incolla e **Run**. Popola centro, campi, giocatori demo, classifiche ed eventi.
-5. Vai su **Project Settings → API** e copia due valori:
-   - **Project URL** (es. `https://abcd1234.supabase.co`)
-   - **anon public** key (una stringa lunga)
-
-### Login via email
-In **Authentication → Providers → Email** assicurati che l'email sia abilitata. Per i test puoi disattivare "Confirm email" (Authentication → Settings) così l'accesso è immediato senza conferma.
-
----
-
-## 3. Collega le chiavi
+## 2. Collega l'app al backend
 
 In locale, crea un file `.env` (copia da `.env.example`):
 
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://abcd1234.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=la-tua-anon-key
+EXPO_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
-Queste due variabili attivano il login reale e i dati veri al posto della modalità demo.
+Su un **device fisico o un simulatore**, `127.0.0.1` punta al device stesso, non al Mac che esegue il backend: usa invece l'IP LAN del Mac, es. `http://192.168.1.23:8000` (e assicurati che il firewall non blocchi la porta 8000).
+
+Questa variabile attiva i dati reali al posto della modalità demo.
+
+---
+
+## 3. Provarla in locale
+
+```bash
+npm install
+npx expo start
+```
+
+Premi `w` per aprirla nel browser, oppure inquadra il QR code con l'app **Expo Go** sul telefono (sullo stesso Wi-Fi del Mac che esegue il backend).
 
 ---
 
@@ -63,23 +56,10 @@ Queste due variabili attivano il login reale e i dati veri al posto della modali
 
 1. Vai su [vercel.com](https://vercel.com) → **Add New → Project** e importa il repo GitHub.
 2. Vercel rileva la configurazione da `vercel.json` (build: `expo export --platform web`, output: `dist`).
-3. In **Settings → Environment Variables** aggiungi le stesse due variabili del punto 3:
-   - `EXPO_PUBLIC_SUPABASE_URL`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-4. **Deploy**. Al termine avrai l'app web pubblica. Ad ogni `git push` Vercel ricostruisce da solo.
+3. In **Settings → Environment Variables** aggiungi `EXPO_PUBLIC_API_URL` puntato a un backend raggiungibile pubblicamente.
+4. **Deploy**.
 
-> Se fai il deploy **senza** le variabili, il sito parte comunque in modalità demo.
-
----
-
-## 5. Provarla in locale (facoltativo)
-
-```bash
-npm install
-npx expo start
-```
-
-Premi `w` per aprirla nel browser, oppure inquadra il QR code con l'app **Expo Go** sul telefono.
+> Il backend FastAPI oggi gira solo in locale (nessun deploy cloud configurato) — finché non viene messo online, il deploy web di questa app resta in modalità demo.
 
 ---
 
@@ -89,24 +69,22 @@ Premi `w` per aprirla nel browser, oppure inquadra il QR code con l'app **Expo G
 app/                    schermate (routing per file, expo-router)
   (auth)/               login e registrazione
   (tabs)/               home, prenota, eventi, classifiche, profilo
-  amici.tsx             lista amici, richieste, ricerca
+  amici.tsx             lista amici, richieste, ricerca (demo, vedi Note)
   giocatore/[id].tsx    profilo di un altro giocatore
   modifica-profilo.tsx  modifica del proprio profilo
 lib/
-  supabase.ts           client Supabase
-  auth.tsx              gestione login/sessione
-  api.ts                accesso ai dati (con fallback demo)
-  mockData.ts           dati demo
+  apiClient.ts           client fetch verso il backend FastAPI condiviso
+  auth.tsx               sessione locale (nessuna autenticazione reale, vedi Note)
+  api.ts                 accesso ai dati (con fallback demo)
+  mockData.ts             dati demo
 components/ui.tsx        componenti riutilizzabili
 constants/theme.ts       colori e stile del brand
-supabase/
-  schema.sql            struttura del database (da eseguire)
-  seed.sql              dati di esempio (da eseguire)
-types/models.ts          tipi dei dati
+types/models.ts          tipi dei dati (allineati al backend FastAPI)
 ```
 
 ## Note
 
+- **Nessuna autenticazione reale per ora.** `signIn`/`signUp` cercano/creano un giocatore per email nel backend condiviso, senza verificare la password — è un fermo provvisorio in attesa di un vero sistema di autenticazione.
+- **La funzione "amici"** (richieste/accettazioni) non ha ancora una API nel backend condiviso e resta a dati demo finché non verrà aggiunta al gestionale.
 - I colori del brand (navy `#1E314A`, oro `#FFAF00`) sono in `constants/theme.ts`.
 - Le icone dell'app (`assets/`) sono segnaposto: sostituiscile con il logo reale quando vuoi (stessi nomi file).
-- I permessi Supabase (RLS) fanno sì che ogni giocatore possa modificare solo il proprio profilo, le proprie prenotazioni e le proprie iscrizioni, ma vedere classifiche, ranking ed eventi di tutti.

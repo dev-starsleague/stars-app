@@ -35,6 +35,8 @@ function RootNav() {
       <Stack.Screen name="amici" options={{ presentation: 'card' }} />
       <Stack.Screen name="modifica-profilo" options={{ presentation: 'card' }} />
       <Stack.Screen name="giocatore/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="richiedi-valutazione" options={{ presentation: 'card' }} />
+      <Stack.Screen name="stars-coin" options={{ presentation: 'card' }} />
     </Stack>
   );
 }

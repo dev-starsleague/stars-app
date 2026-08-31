@@ -16,7 +16,6 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
-  const [ok, setOk] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const onRegister = async () => {
@@ -28,23 +27,8 @@ export default function Register() {
     const { error } = await signUp(email.trim(), password, nome.trim(), cognome.trim());
     setLoading(false);
     if (error) setErr(error);
-    else setOk(true);
+    else router.replace('/(tabs)');
   };
-
-  if (ok) {
-    return (
-      <SafeAreaView style={s.safe}>
-        <View style={s.center}>
-          <Ionicons name="checkmark-circle" size={64} color={Colors.green} />
-          <Text style={s.title}>Account creato!</Text>
-          <Muted style={{ textAlign: 'center', marginTop: 8 }}>
-            Ti abbiamo inviato una email di conferma. Confermala e poi accedi.
-          </Muted>
-          <Button title="Vai al login" onPress={() => router.replace('/(auth)/login')} style={{ marginTop: Spacing.xl, alignSelf: 'stretch' }} />
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={s.safe}>
@@ -78,12 +62,12 @@ export default function Register() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.navy },
+  safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.xl, flexGrow: 1, justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
   back: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg },
   backText: { color: Colors.slateLight, fontSize: Font.body },
-  title: { color: Colors.white, fontSize: Font.h1, fontWeight: '800' },
+  title: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800' },
   err: { color: Colors.red, marginTop: Spacing.sm, fontSize: Font.small },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
   link: { color: Colors.gold, fontWeight: '700' },

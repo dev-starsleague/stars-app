@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Scro
 import { useRouter, Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { isMock } from '../../lib/api';
 import { Button, Muted } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,10 +52,10 @@ export default function Login() {
             </Link>
           </View>
 
-          {!isSupabaseConfigured && (
+          {isMock() && (
             <View style={s.demoBox}>
               <Ionicons name="information-circle" size={18} color={Colors.slateLight} />
-              <Text style={s.demoText}>Supabase non è ancora configurato. Puoi esplorare l'app in modalità demo.</Text>
+              <Text style={s.demoText}>Backend non ancora configurato. Puoi esplorare l'app in modalità demo.</Text>
             </View>
           )}
           <Button title="Entra in modalità demo" variant="ghost" onPress={() => { enterDemo(); router.replace('/(tabs)'); }}
@@ -83,15 +83,15 @@ function traduci(m: string): string {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.navy },
+  safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.xl, flexGrow: 1, justifyContent: 'center' },
   logoWrap: { alignItems: 'center', marginBottom: Spacing.xxl },
   logoBadge: { width: 68, height: 68, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md },
-  brand: { color: Colors.white, fontSize: 26, fontWeight: '900', letterSpacing: 4 },
+  brand: { color: Colors.navyDeep, fontSize: 26, fontWeight: '900', letterSpacing: 4 },
   brandGold: { color: Colors.gold, fontSize: 20, fontWeight: '900', letterSpacing: 8 },
-  title: { color: Colors.white, fontSize: Font.h1, fontWeight: '800' },
+  title: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800' },
   field: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.navyCard, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  input: { flex: 1, color: Colors.white, height: 52, fontSize: Font.body },
+  input: { flex: 1, color: Colors.navyDeep, height: 52, fontSize: Font.body },
   err: { color: Colors.red, marginTop: Spacing.sm, fontSize: Font.small },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
   link: { color: Colors.gold, fontWeight: '700' },

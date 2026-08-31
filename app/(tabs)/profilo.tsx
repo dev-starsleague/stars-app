@@ -1,107 +1,214 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
-import { getStars, getMiePrenotazioni, getTessera } from '../../lib/api';
+import {
+  getCentro, getPartiteGiocatore, getRankingAttuale, getStoricoRanking, getTessera,
+  caricaFotoProfilo, updateProfilo, haVinto,
+} from '../../lib/api';
+import { apiUrl } from '../../lib/apiClient';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted } from '../../components/ui';
-import { BADGE_CATALOGO, COLORE_FASCIA } from '../../lib/stars';
+import { Muted, Chip } from '../../components/ui';
+import { RankingChart } from '../../components/RankingChart';
+import { BADGE_CATALOGO } from '../../lib/stars';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
-import type { StarsProfilo, Tessera, Prenotazione } from '../../types/models';
+import type {
+  Centro, EventoStorico, ManoDominante, Posizione, Prenotazione, Tessera,
+} from '../../types/models';
 
-type TabP = 'ranking' | 'partite' | 'badge' | 'tessera';
+type TabP = 'ranking' | 'partite' | 'badge' | 'tesseramento';
+type FiltroEsito = 'vittorie' | 'sconfitte';
+type FiltroTipo = 'normali' | 'eventi';
+
+function toggleInSet<T>(set: Set<T>, v: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(v)) next.delete(v); else next.add(v);
+  return next;
+}
+
+function posizioneLabel(p?: Posizione | null): string {
+  if (!p) return '—';
+  return p === 'sinistra' ? 'Lato SX' : p === 'destra' ? 'Lato DX' : 'Entrambe';
+}
+function manoLabel(m?: ManoDominante | null): string {
+  if (!m) return '—';
+  return m === 'mancino' ? 'Mancino' : m === 'destro' ? 'Destrorso' : 'Ambidestro';
+}
 
 export default function Profilo() {
-  const { me, signOut } = useAuth();
+  const { me, signOut, refreshMe } = useAuth();
   const router = useRouter();
   const [tab, setTab] = useState<TabP>('ranking');
-  const [stars, setStars] = useState<StarsProfilo | null>(null);
+
+  const [centro, setCentro] = useState<Centro | null>(null);
+  const [sport, setSport] = useState<string>('Padel');
+  const [sportModaleAperto, setSportModaleAperto] = useState(false);
+  const sportInizializzato = useRef(false);
+
   const [tessera, setTessera] = useState<Tessera | null>(null);
-  const [pren, setPren] = useState<Prenotazione[]>([]);
+  const [fotoLocale, setFotoLocale] = useState<string | null>(null);
+  const [caricandoFoto, setCaricandoFoto] = useState(false);
+
+  const [rankingAttuale, setRankingAttuale] = useState<{ ranking: number; stato: string } | null>(null);
+  const [storico, setStorico] = useState<EventoStorico[]>([]);
+  const [caricandoRanking, setCaricandoRanking] = useState(true);
+
+  const [partiteTutte, setPartiteTutte] = useState<Prenotazione[]>([]);
+  const [filtroEsito, setFiltroEsito] = useState<Set<FiltroEsito>>(new Set());
+  const [filtroTipo, setFiltroTipo] = useState<Set<FiltroTipo>>(new Set());
+  const [meseNav, setMeseNav] = useState(() => new Date());
+  const cambiaMeseNav = (delta: number) => setMeseNav((d) => { const n = new Date(d); n.setMonth(n.getMonth() + delta); return n; });
 
   const load = useCallback(async () => {
     if (!me) return;
-    const [st, te, pr] = await Promise.all([getStars(me.id), getTessera(), getMiePrenotazioni(me.id)]);
-    setStars(st); setTessera(te); setPren(pr);
+    const [c, te, pr] = await Promise.all([getCentro(), getTessera(), getPartiteGiocatore(me.id)]);
+    setCentro(c);
+    setTessera(te);
+    setPartiteTutte(pr);
+    if (!sportInizializzato.current) {
+      const preferito = me.sport_preferiti?.find((s) => c.sport_attivi.includes(s));
+      setSport(preferito ?? c.sport_attivi[0] ?? 'Padel');
+      sportInizializzato.current = true;
+    }
   }, [me]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Ranking/storico dipendono dallo sport selezionato: si ricaricano anche
+  // quando cambia lo sport, non solo al focus della schermata.
+  useEffect(() => {
+    if (!me) return;
+    setCaricandoRanking(true);
+    Promise.all([getRankingAttuale(me.id, sport), getStoricoRanking(me.id, sport)])
+      .then(([r, st]) => { setRankingAttuale(r); setStorico(st); })
+      .finally(() => setCaricandoRanking(false));
+  }, [me, sport]);
+
   const nome = `${me?.nome ?? ''} ${me?.cognome ?? ''}`.trim() || 'Giocatore';
-  const stimato = stars?.stato_stima === 'stimato';
+  const avatarUri = fotoLocale ?? (me?.avatar_url ? (me.avatar_url.startsWith('http') ? me.avatar_url : apiUrl(me.avatar_url)) : null);
+
+  const scegliFoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permesso negato', 'Serve il permesso per scegliere una foto dalla libreria.'); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8,
+    });
+    if (res.canceled || !res.assets?.[0] || !me) return;
+    const asset = res.assets[0];
+    setFotoLocale(asset.uri); // anteprima immediata, anche in modalità demo
+    setCaricandoFoto(true);
+    const { url, error } = await caricaFotoProfilo(asset.uri, asset.mimeType ?? 'image/jpeg');
+    if (!error && url) {
+      await updateProfilo(me.id, { avatar_url: url });
+      await refreshMe();
+    } else if (error) {
+      Alert.alert('Errore', error);
+    }
+    setCaricandoFoto(false);
+  };
+
+  const partiteSport = partiteTutte.filter((p) => (p.campo?.sport ?? 'Padel') === sport);
+  const meseNavIso = `${meseNav.getFullYear()}-${String(meseNav.getMonth() + 1).padStart(2, '0')}`;
+  const nomeMeseNav = meseNav.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  const partiteFiltrate = partiteSport.filter((p) => {
+    if ((p.data ?? '').slice(0, 7) !== meseNavIso) return false;
+    if (filtroTipo.size > 0) {
+      const eBucket: FiltroTipo = p.tipo === 'torneo' ? 'eventi' : 'normali';
+      if (!filtroTipo.has(eBucket)) return false;
+    }
+    if (filtroEsito.size > 0 && me) {
+      const vinta = haVinto(p, me.id);
+      const eBucket: FiltroEsito | null = vinta === true ? 'vittorie' : vinta === false ? 'sconfitte' : null;
+      if (!eBucket || !filtroEsito.has(eBucket)) return false;
+    }
+    return true;
+  });
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <AppHeader />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Card profilo scura */}
+        {/* Card profilo */}
         <View style={s.headCard}>
           <View style={s.headTop}>
-            <View style={s.avatarBig}>
-              <Text style={s.avatarBigText}>{(me?.nome?.[0] ?? 'P').toUpperCase()}</Text>
-              <View style={s.camBtn}><Ionicons name="camera" size={12} color={Colors.white} /></View>
+            <View style={s.avatarWrap}>
+              <View style={s.avatarBig}>
+                {avatarUri
+                  ? <Image source={{ uri: avatarUri }} style={s.avatarImg} />
+                  : <Text style={s.avatarBigText}>{(me?.nome?.[0] ?? 'P').toUpperCase()}</Text>}
+              </View>
+              <Pressable style={s.camBtn} onPress={scegliFoto} disabled={caricandoFoto}>
+                {caricandoFoto ? <ActivityIndicator size="small" color={Colors.white} /> : <Ionicons name="camera" size={12} color={Colors.white} />}
+              </Pressable>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.headName}>{nome}</Text>
               <Text style={s.headNick}>{me?.profilo?.nickname ? `"${me.profilo.nickname}"` : 'Nessun nickname'}</Text>
             </View>
             <Pressable style={s.gear} onPress={() => router.push('/modifica-profilo')}>
-              <Ionicons name="settings-outline" size={18} color={Colors.slateLight} />
+              <Ionicons name="settings-outline" size={18} color={Colors.white} />
             </Pressable>
           </View>
 
           <View style={s.headStats}>
             <View style={s.hStat}>
-              <Text style={s.hStatIcon}>🌟</Text>
-              <Text style={[s.hStatTop, { color: stimato ? Colors.green : Colors.green }]}>{stimato ? 'Stimato' : 'Stimato'}</Text>
-              <Muted>{stars?.stima_pts ?? 1000} pts</Muted>
-            </View>
-            <View style={s.hStat}>
-              <Text style={s.hStatIcon}>🏃</Text>
-              <Text style={s.hStatTopWhite}>{me?.posizione === 'sinistra' ? 'Lato SX' : 'Lato DX'}</Text>
+              <Text style={s.hStatValue}>{posizioneLabel(me?.posizione)}</Text>
               <Muted>Posizione</Muted>
             </View>
             <View style={s.hStat}>
-              <Text style={s.hStatIcon}>✋</Text>
-              <Text style={s.hStatTopWhite}>{me?.mano_dominante === 'mancino' ? 'Mancino' : 'Destrorso'}</Text>
+              <Text style={s.hStatValue}>{manoLabel(me?.mano_dominante)}</Text>
               <Muted>Mano</Muted>
             </View>
           </View>
         </View>
+
+        {/* Sport da visualizzare: sotto le info del giocatore, sopra i tab —
+            filtra Ranking e Partite qui sotto. */}
+        <Pressable style={s.sportBar} onPress={() => setSportModaleAperto(true)}>
+          <Ionicons name="tennisball-outline" size={16} color={Colors.navyDeep} />
+          <Text style={s.sportBarText}>{sport}</Text>
+          <Ionicons name="chevron-down" size={14} color={Colors.slate} />
+        </Pressable>
 
         {/* Tab interne */}
         <View style={s.tabs}>
           <TabBtn icon="trophy-outline" label="Ranking" active={tab === 'ranking'} onPress={() => setTab('ranking')} />
           <TabBtn icon="git-compare-outline" label="Partite" active={tab === 'partite'} onPress={() => setTab('partite')} />
           <TabBtn icon="ribbon-outline" label="Badge" active={tab === 'badge'} onPress={() => setTab('badge')} />
-          <TabBtn icon="document-text-outline" label="Tessera" active={tab === 'tessera'} onPress={() => setTab('tessera')} />
+          <TabBtn icon="document-text-outline" label="Tesseramento" active={tab === 'tesseramento'} onPress={() => setTab('tesseramento')} />
         </View>
 
         {tab === 'ranking' && (
           <View style={s.panel}>
-            <Text style={s.panelTitle}>Il tuo ranking</Text>
-            <View style={s.rankRow}>
-              <View style={s.rankBox}>
-                <Text style={s.rankDash}>—</Text>
-                <Text style={s.rankBoxLabel}>RANKING GLOBALE</Text>
-              </View>
-              <View style={s.rankBox}>
-                <Text style={s.rankScore}>{(stars?.score ?? 0).toFixed(2)}</Text>
-                <Text style={s.rankBoxLabel}>SCORE</Text>
-              </View>
-            </View>
-
-            {!stimato && (
+            <Text style={s.panelTitle}>Il tuo ranking — {sport}</Text>
+            {caricandoRanking ? (
+              <ActivityIndicator color={Colors.gold} style={{ marginVertical: Spacing.xl }} />
+            ) : rankingAttuale ? (
+              <>
+                <View style={s.rankRow}>
+                  <View style={s.rankBox}>
+                    <Text style={s.rankScore}>{rankingAttuale.ranking.toFixed(2)}</Text>
+                    <Text style={s.rankBoxLabel}>RANKING ATTUALE</Text>
+                  </View>
+                  <View style={s.rankBox}>
+                    <Text style={[s.rankScore, { fontSize: 18 }]}>{rankingAttuale.stato === 'attivo' ? 'Attivo' : 'In verifica'}</Text>
+                    <Text style={s.rankBoxLabel}>STATO</Text>
+                  </View>
+                </View>
+                <RankingChart eventi={storico} />
+              </>
+            ) : (
               <View style={s.emptyBox}>
                 <Text style={s.emptyIcon}>🎯</Text>
                 <Text style={s.emptyTitle}>Zero partite, zero gloria.</Text>
                 <Muted style={{ textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
                   Il tuo ranking si aggiorna automaticamente dopo ogni partita competitiva. Prima però dobbiamo valutare il tuo livello di gioco.
                 </Muted>
-                <Pressable style={s.scopriBtn} onPress={() => router.push('/(tabs)/eventi')}>
+                <Pressable style={s.scopriBtn} onPress={() => router.push({ pathname: '/richiedi-valutazione', params: { sport } })}>
                   <Ionicons name="trending-up" size={16} color={Colors.navyDeep} />
                   <Text style={s.scopriText}>Scopri il tuo ranking</Text>
                 </Pressable>
@@ -112,19 +219,42 @@ export default function Profilo() {
 
         {tab === 'partite' && (
           <View style={s.panel}>
-            <Text style={s.panelTitle}>Le mie partite</Text>
-            {pren.length === 0 ? (
-              <Muted style={{ textAlign: 'center', paddingVertical: Spacing.xl }}>Nessuna partita registrata.</Muted>
-            ) : pren.map((p) => (
-              <View key={p.id} style={s.matchRow}>
-                <View style={s.matchIcon}><Ionicons name="tennisball" size={18} color={Colors.gold} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.matchName}>{p.campo?.nome ?? 'Campo'}</Text>
-                  <Muted>{p.data} · {p.inizio?.slice(0, 5)}</Muted>
+            <View style={s.meseNav}>
+              <Pressable onPress={() => cambiaMeseNav(-1)} style={s.meseNavBtn}>
+                <Ionicons name="chevron-back" size={18} color={Colors.navyDeep} />
+              </Pressable>
+              <Text style={s.meseNavTitolo}>{cap(nomeMeseNav)}</Text>
+              <Pressable onPress={() => cambiaMeseNav(1)} style={s.meseNavBtn}>
+                <Ionicons name="chevron-forward" size={18} color={Colors.navyDeep} />
+              </Pressable>
+            </View>
+
+            <View style={[s.filtriRiga, { flexWrap: 'wrap' }]}>
+              <Chip label="Vittorie" active={filtroEsito.has('vittorie')} onPress={() => setFiltroEsito((p) => toggleInSet(p, 'vittorie'))} />
+              <Chip label="Sconfitte" active={filtroEsito.has('sconfitte')} onPress={() => setFiltroEsito((p) => toggleInSet(p, 'sconfitte'))} />
+              <Chip label="Normali" active={filtroTipo.has('normali')} onPress={() => setFiltroTipo((p) => toggleInSet(p, 'normali'))} />
+              <Chip label="Eventi" active={filtroTipo.has('eventi')} onPress={() => setFiltroTipo((p) => toggleInSet(p, 'eventi'))} />
+            </View>
+
+            {partiteFiltrate.length === 0 ? (
+              <Muted style={{ textAlign: 'center', paddingVertical: Spacing.xl }}>Nessuna partita con questi filtri.</Muted>
+            ) : partiteFiltrate.map((p) => {
+              const vinta = me ? haVinto(p, me.id) : null;
+              return (
+                <View key={p.id} style={s.matchRow}>
+                  <View style={s.matchIcon}><Ionicons name="tennisball" size={18} color={Colors.gold} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.matchName}>{p.campo?.nome ?? 'Campo'}{p.tipo === 'torneo' ? ' · evento' : ''}</Text>
+                    <Muted>{p.data} · {p.inizio?.slice(0, 5)}</Muted>
+                  </View>
+                  {vinta !== null && (
+                    <View style={[s.esitoPill, { backgroundColor: (vinta ? Colors.green : Colors.red) + '22' }]}>
+                      <Text style={[s.esitoText, { color: vinta ? Colors.green : Colors.red }]}>{vinta ? 'Vittoria' : 'Sconfitta'}</Text>
+                    </View>
+                  )}
                 </View>
-                <Text style={s.matchPrice}>€{p.prezzo}</Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -143,7 +273,7 @@ export default function Profilo() {
           </View>
         )}
 
-        {tab === 'tessera' && (
+        {tab === 'tesseramento' && (
           <View style={s.panel}>
             <Text style={s.panelTitle}>Tessera PSL</Text>
             <View style={s.tesseraBox}>
@@ -163,7 +293,7 @@ export default function Profilo() {
 
         {/* Azioni finali */}
         <View style={s.footRow}>
-          <Pressable style={s.footBtn} onPress={() => router.push('/amici')}>
+          <Pressable style={s.footBtn} onPress={() => me && router.push(`/giocatore/${me.id}`)}>
             <Ionicons name="open-outline" size={16} color={Colors.navyDeep} />
             <Text style={s.footText}>Profilo pubblico</Text>
           </Pressable>
@@ -175,15 +305,32 @@ export default function Profilo() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* Selettore sport: uno alla volta, dagli sport attivi del centro */}
+      <Modal visible={sportModaleAperto} transparent animationType="fade" onRequestClose={() => setSportModaleAperto(false)}>
+        <Pressable style={s.modaleSfondo} onPress={() => setSportModaleAperto(false)}>
+          <View style={s.modaleBox}>
+            <Text style={s.modaleTitolo}>Sport da visualizzare</Text>
+            {(centro?.sport_attivi ?? ['Padel']).map((sp) => (
+              <Pressable key={sp} style={s.modaleRiga} onPress={() => { setSport(sp); setSportModaleAperto(false); }}>
+                <Ionicons name={sp === sport ? 'radio-button-on' : 'radio-button-off'} size={20} color={sp === sport ? Colors.gold : Colors.slate} />
+                <Text style={s.modaleRigaText}>{sp}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
+function cap(v: string): string { return v.charAt(0).toUpperCase() + v.slice(1); }
+
 function TabBtn({ icon, label, active, onPress }: { icon: any; label: string; active: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[s.tabBtn, active && s.tabBtnActive]}>
-      <Ionicons name={icon} size={16} color={active ? Colors.navyDeep : Colors.slate} />
-      <Text style={[s.tabText, active && s.tabTextActive]}>{label}</Text>
+      <Ionicons name={icon} size={17} color={active ? Colors.white : Colors.slate} />
+      <Text style={[s.tabText, active && s.tabTextActive]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </Pressable>
   );
 }
@@ -193,27 +340,28 @@ const s = StyleSheet.create({
   scroll: { padding: Spacing.lg },
   headCard: { backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
   headTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  avatarBig: { width: 68, height: 68, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
+  avatarWrap: { width: 68, height: 68 },
+  avatarBig: { width: 68, height: 68, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarBigText: { color: Colors.navyDeep, fontSize: 30, fontWeight: '900' },
-  camBtn: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.navyCard },
-  headName: { color: Colors.white, fontSize: Font.h2, fontWeight: '900' },
+  camBtn: { position: 'absolute', bottom: -4, right: -4, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.navyCard },
+  headName: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
   headNick: { color: Colors.slate, fontSize: Font.body, fontStyle: 'italic' },
   gear: { width: 38, height: 38, borderRadius: Radius.md, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center' },
   headStats: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  hStat: { flex: 1, backgroundColor: Colors.navyDeep + '99', borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
-  hStatIcon: { fontSize: 22 },
-  hStatTop: { fontWeight: '800', fontSize: Font.body },
-  hStatTopWhite: { color: Colors.white, fontWeight: '800', fontSize: Font.body },
-  tabs: { flexDirection: 'row', backgroundColor: '#F7F8FA', borderRadius: Radius.md, padding: 4, marginTop: Spacing.lg },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: Radius.sm },
+  hStat: { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
+  hStatValue: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3 },
+  sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: Colors.navyLine + '33' },
+  sportBarText: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.small },
+  tabs: { flexDirection: 'row', backgroundColor: '#F7F8FA', borderRadius: Radius.md, padding: 4, marginTop: Spacing.md, gap: 4 },
+  tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, paddingHorizontal: 2, borderRadius: Radius.sm },
   tabBtnActive: { backgroundColor: Colors.navyDeep },
-  tabText: { color: Colors.slate, fontWeight: '700', fontSize: Font.small },
+  tabText: { color: Colors.slate, fontWeight: '700', fontSize: 10.5 },
   tabTextActive: { color: Colors.white },
   panel: { backgroundColor: '#F7F8FA', borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md },
   panelTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.md },
   rankRow: { flexDirection: 'row', gap: Spacing.md },
   rankBox: { flex: 1, backgroundColor: '#EEF1F5', borderRadius: Radius.md, padding: Spacing.lg, alignItems: 'center' },
-  rankDash: { color: Colors.gold, fontSize: 32, fontWeight: '900' },
   rankScore: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900' },
   rankBoxLabel: { color: Colors.slate, fontSize: Font.tiny, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
   emptyBox: { backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.xl, alignItems: 'center', marginTop: Spacing.md },
@@ -221,10 +369,15 @@ const s = StyleSheet.create({
   emptyTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
   scopriBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.gold, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderRadius: Radius.pill, marginTop: Spacing.lg },
   scopriText: { color: Colors.navyDeep, fontWeight: '800' },
+  meseNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.md },
+  meseNavBtn: { width: 32, height: 32, borderRadius: Radius.compact, backgroundColor: '#EEF1F5', alignItems: 'center', justifyContent: 'center' },
+  meseNavTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body },
+  filtriRiga: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
   matchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm },
   matchIcon: { width: 40, height: 40, borderRadius: Radius.sm, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
   matchName: { color: Colors.navyDeep, fontWeight: '700' },
-  matchPrice: { color: Colors.gold, fontWeight: '800', fontSize: Font.h3 },
+  esitoPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill },
+  esitoText: { fontWeight: '800', fontSize: Font.tiny, textTransform: 'uppercase' },
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   badge: { width: '30%', backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 4 },
   badgeLocked: { opacity: 0.45 },
@@ -239,4 +392,9 @@ const s = StyleSheet.create({
   footRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
   footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: Radius.md, paddingVertical: Spacing.lg },
   footText: { color: Colors.navyDeep, fontWeight: '800' },
+  modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+  modaleBox: { width: '100%', maxWidth: 340, backgroundColor: Colors.surface, borderRadius: Radius.card, padding: Spacing.lg },
+  modaleTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
+  modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
+  modaleRigaText: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '600' },
 });

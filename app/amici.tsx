@@ -41,7 +41,7 @@ export default function Amici() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()} style={s.back}><Ionicons name="chevron-back" size={24} color={Colors.white} /></Pressable>
+        <Pressable onPress={() => router.back()} style={s.back}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
         <Text style={s.title}>Amici</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -123,13 +123,13 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
   back: { width: 24 },
-  title: { color: Colors.white, fontSize: Font.h2, fontWeight: '800' },
+  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   tabs: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
   scroll: { padding: Spacing.lg, paddingTop: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
   rowInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
-  nome: { color: Colors.white, fontSize: Font.body, fontWeight: '700' },
+  nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.navyCard, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  searchInput: { flex: 1, color: Colors.white, height: 50, fontSize: Font.body },
+  searchInput: { flex: 1, color: Colors.navyDeep, height: 50, fontSize: Font.body },
   addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
 });

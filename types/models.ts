@@ -5,6 +5,11 @@ export type Genere = 'M' | 'F';
 export type Posizione = 'destra' | 'sinistra' | 'entrambe';
 export type ManoDominante = 'destro' | 'mancino' | 'ambidestro';
 
+export interface FasciaOraria {
+  da: string; // HH:MM
+  a: string; // HH:MM
+}
+
 export interface Giocatore {
   id: string;
   user_id: string | null; // collega auth.users -> giocatore (nuovo per l'app)
@@ -14,10 +19,12 @@ export interface Giocatore {
   data_nascita: string | null;
   telefono: string | null;
   email: string | null;
-  profilo: { nickname?: string; ranking?: number; avatar_url?: string } | null;
+  codice_fiscale?: string | null;
+  profilo: { nickname?: string; ranking?: number; avatar_url?: string; centri_preferiti?: string[] } | null;
   sport_preferiti: string[];
   mano_dominante: ManoDominante | null;
   posizione: Posizione | null;
+  disponibilita_oraria?: Record<string, FasciaOraria[]> | null;
   numero_tessera: string | null;
   avatar_url?: string | null;
   created_at?: string;
@@ -27,11 +34,27 @@ export interface Centro {
   id: string;
   nome: string;
   citta: string | null;
+  provincia: string | null;
+  regione: string | null;
   indirizzo: string | null;
   logo_url: string | null;
   copertina_url: string | null;
   sport_attivi: string[];
   coin_nome: string; // es. "SC"
+}
+
+export interface ShopProdotto {
+  id: string;
+  centro_id: string;
+  nome: string;
+  prezzo_coin: number;
+  prezzo_euro: number | null;
+  descrizione: string | null;
+  immagine_url: string | null;
+  stock: number | null;
+  varianti: { nome: string; stock: number }[];
+  attivo: boolean;
+  condizione: 'nuovo' | 'usato';
 }
 
 export interface Campo {
@@ -70,6 +93,10 @@ export interface Prenotazione {
   giocatori_extra: string[]; // id giocatori
   formato: 'singolo' | 'doppio' | null;
   risultato: Risultato | null;
+  // squadra A/B esplicita (fallback: ordine posizionale in giocatori_extra,
+  // a1/a2 poi b1/b2, per prenotazioni create prima che questo campo esistesse)
+  squadre?: { a: string[]; b: string[] } | null;
+  creata_da?: string | null;
   // join lato client
   campo?: Campo;
   giocatori?: Giocatore[];
@@ -90,6 +117,51 @@ export interface RankingGiocatore {
   sport: string;
   ranking: number;
   stato: 'in_verifica' | 'attivo';
+}
+
+// Esito del PSL Ranking Engine per una partita — vedi backend/app/models/ranking.py.
+// Solo i campi usati per ricostruire lo storico ranking del giocatore.
+export interface MatchRanking {
+  id: string;
+  sport: string;
+  data: string; // YYYY-MM-DD
+  prenotazione_id: string;
+  vincitore: 'A' | 'B' | null;
+  a1_id: string; a2_id: string; b1_id: string; b2_id: string;
+  a1_pre: number; a2_pre: number; b1_pre: number; b2_pre: number;
+  a1_delta: number; a2_delta: number; b1_delta: number; b2_delta: number;
+}
+
+// Correzione al ranking non legata a una singola partita (chiusura verifica,
+// radar, correzione centro/maestro) — vedi backend/app/models/ranking.py.
+export interface RankingOverride {
+  id: string;
+  giocatore_id: string;
+  sport: string;
+  tipo: 'centro' | 'radar' | 'verifica' | 'maestro';
+  ranking_pre: number;
+  ranking_post: number;
+  motivazione: string | null;
+  data: string; // ISO datetime
+}
+
+// Riga unificata (partita o correzione) dello storico ranking di un
+// giocatore, ordinata cronologicamente — vedi lib/api.ts getStoricoRanking,
+// porting di stars-system/src/lib/rankingStorico.js.
+export interface EventoStorico {
+  tipo: 'match' | 'override';
+  id: string;
+  data: string;
+  pre: number;
+  post: number;
+  delta: number;
+  // solo tipo 'match'
+  vinta?: boolean;
+  compagno?: string | null;
+  avversari?: string | null;
+  // solo tipo 'override'
+  overrideTipo?: RankingOverride['tipo'];
+  motivazione?: string | null;
 }
 
 export interface ClassificaMensile {

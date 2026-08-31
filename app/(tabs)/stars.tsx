@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getCircuito, getClassificaNazionale, getStars } from '../../lib/api';
+import { AppHeader } from '../../components/AppHeader';
 import { Muted } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import type { CircuitoNazionale, RigaClassificaNazionale, StarsProfilo } from '../../types/models';
@@ -27,6 +28,7 @@ export default function Stars() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.gold} />}>
 
@@ -105,7 +107,7 @@ const s = StyleSheet.create({
   scroll: { padding: Spacing.lg },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   brandText: { color: Colors.slate, fontSize: Font.small, fontWeight: '700' },
-  title: { color: Colors.white, fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
+  title: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
   seasonCard: { backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 2, borderColor: Colors.gold + '55' },
   seasonLabel: { color: Colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 1 },
   seasonHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
@@ -113,16 +115,16 @@ const s = StyleSheet.create({
   trophy: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.lg, marginBottom: 6 },
   progressPct: { color: Colors.navyDeep, fontWeight: '800' },
-  progressBg: { height: 8, borderRadius: 4, backgroundColor: Colors.cloud, overflow: 'hidden' },
+  progressBg: { height: 8, borderRadius: 4, backgroundColor: Colors.bg, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: Colors.gold, borderRadius: 4 },
   stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
   statCard: { flex: 1, backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 4 },
   statValue: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
   statLabel: { color: Colors.slate, fontSize: Font.small },
-  sectionTitle: { color: Colors.white, fontSize: Font.h2, fontWeight: '800', marginTop: Spacing.xl, marginBottom: Spacing.md },
+  sectionTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800', marginTop: Spacing.xl, marginBottom: Spacing.md },
   listCard: { backgroundColor: Colors.white, borderRadius: Radius.lg, paddingHorizontal: Spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.cloud },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.navyLine + '22' },
   posWrap: { width: 28, alignItems: 'center' },
   medal: { fontSize: 20 },
   posNum: { color: Colors.slate, fontWeight: '800', fontSize: Font.body },
