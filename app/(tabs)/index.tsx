@@ -10,7 +10,7 @@ import { getStars, getTessera, getMiePrenotazioni } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Muted } from '../../components/ui';
 import { COLORE_FASCIA } from '../../lib/stars';
-import { Colors, Radius, Spacing, Font, CORNER_SMOOTHING, Glass } from '../../constants/theme';
+import { Colors, Radius, Spacing, Font, CORNER_SMOOTHING } from '../../constants/theme';
 import type { StarsProfilo, Tessera, Prenotazione } from '../../types/models';
 
 const GIORNI_SETT = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
@@ -127,7 +127,7 @@ function CalendarWidget({ prenotazioni, onPick }: { prenotazioni: Prenotazione[]
   const nomeMese = now.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 
   return (
-    <View style={s.calCard}>
+    <Card style={s.calCard}>
       <View style={s.calHead}>
         <Text style={s.calTitle}>{nomeMese.charAt(0).toUpperCase() + nomeMese.slice(1)}</Text>
         <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -150,7 +150,7 @@ function CalendarWidget({ prenotazioni, onPick }: { prenotazioni: Prenotazione[]
           </Pressable>
         ))}
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -173,11 +173,7 @@ const s = StyleSheet.create({
   miniBigGold: { color: Colors.gold, fontSize: 24, fontWeight: '900', marginTop: 2 },
   miniDivider: { height: 1, backgroundColor: Colors.navyLine + '55', marginVertical: Spacing.sm },
   miniFascia: { fontSize: Font.body, fontWeight: '800' },
-  calCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card, padding: Spacing.lg, marginTop: Spacing.md,
-    borderWidth: 1, borderColor: Colors.navyLine + '22',
-    boxShadow: Glass.shadow,
-  } as any,
+  calCard: { marginTop: Spacing.md },
   calHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   calTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
   calWeek: { flexDirection: 'row' },

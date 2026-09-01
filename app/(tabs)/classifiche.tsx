@@ -1,10 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { getClassifica } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted } from '../../components/ui';
+import { Card, Muted, Segmented } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import type { ClassificaMensile, Genere } from '../../types/models';
 
@@ -32,18 +32,15 @@ export default function StarDelMese() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.gold} />}>
 
-        {/* Card filtri bianca */}
-        <View style={s.filterCard}>
+        {/* Card filtri vetro liquido */}
+        <Card style={s.filterCard}>
           <Text style={s.filterLabel}>{cap(nomeMese)}</Text>
-          <View style={s.toggle}>
-            <Pressable style={[s.toggleBtn, genere === 'M' && s.toggleActive]} onPress={() => setGenere('M')}>
-              <Text style={[s.toggleText, genere === 'M' && s.toggleTextActive]}>🏆 Maschile</Text>
-            </Pressable>
-            <Pressable style={[s.toggleBtn, genere === 'F' && s.toggleActive]} onPress={() => setGenere('F')}>
-              <Text style={[s.toggleText, genere === 'F' && s.toggleTextActive]}>👑 Femminile</Text>
-            </Pressable>
-          </View>
-        </View>
+          <Segmented
+            value={genere}
+            onChange={(v) => setGenere(v as Genere)}
+            options={[{ value: 'M', label: '🏆 Maschile' }, { value: 'F', label: '👑 Femminile' }]}
+          />
+        </Card>
 
         {/* Primo classificato in evidenza */}
         {primo && (
@@ -61,7 +58,7 @@ export default function StarDelMese() {
 
         {/* Resto classifica */}
         {resto.map((r, i) => (
-          <View key={r.id} style={s.row}>
+          <Card key={r.id} style={s.row}>
             <Text style={s.rowPos}>{i + 2}</Text>
             <View style={s.rowAvatar}><Text style={s.rowAvatarText}>{(r.giocatore?.nome?.[0] ?? '?').toUpperCase()}</Text></View>
             <View style={{ flex: 1 }}>
@@ -69,7 +66,7 @@ export default function StarDelMese() {
               <Muted>{r.partite} partite · {r.vittorie} vittorie</Muted>
             </View>
             <Text style={s.rowScore}>{r.punti} pt</Text>
-          </View>
+          </Card>
         ))}
         {lista.length === 0 && <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun punteggio questo mese.</Muted>}
         <View style={{ height: 20 }} />
@@ -83,13 +80,8 @@ function cap(v: string) { return v.charAt(0).toUpperCase() + v.slice(1); }
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.lg },
-  filterCard: { backgroundColor: '#F7F8FA', borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.xl },
+  filterCard: { marginBottom: Spacing.xl },
   filterLabel: { color: Colors.slate, fontSize: Font.small, fontWeight: '800', marginBottom: Spacing.sm },
-  toggle: { flexDirection: 'row', backgroundColor: '#E8EBEF', borderRadius: Radius.pill, padding: 4 },
-  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: Radius.pill, alignItems: 'center' },
-  toggleActive: { backgroundColor: Colors.gold },
-  toggleText: { color: Colors.slate, fontWeight: '800', fontSize: Font.body },
-  toggleTextActive: { color: Colors.navyDeep },
   heroWrap: { alignItems: 'center', marginBottom: Spacing.xl },
   medalTop: { fontSize: 28 },
   heroAvatar: { width: 84, height: 84, borderRadius: 24, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
@@ -99,7 +91,7 @@ const s = StyleSheet.create({
   heroFascia: { color: Colors.slate, fontSize: Font.small, fontWeight: '700' },
   pedestal: { width: '65%', height: 120, backgroundColor: Colors.gold + '18', borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderWidth: 1, borderColor: Colors.gold + '44', alignItems: 'center', justifyContent: 'flex-start', paddingTop: Spacing.md, marginTop: Spacing.md },
   pedestalNum: { color: Colors.gold + '99', fontSize: 40, fontWeight: '900' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.navyCard, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.navyLine + '44' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
   rowPos: { color: Colors.slate, fontWeight: '900', fontSize: Font.body, width: 22, textAlign: 'center' },
   rowAvatar: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.navyLine, alignItems: 'center', justifyContent: 'center' },
   rowAvatarText: { color: Colors.white, fontWeight: '800' },

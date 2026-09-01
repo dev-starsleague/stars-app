@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import {
@@ -12,10 +13,10 @@ import {
 } from '../../lib/api';
 import { apiUrl } from '../../lib/apiClient';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted, Chip } from '../../components/ui';
+import { Card, Chip, IconBadge, IconButton, Muted, Segmented } from '../../components/ui';
 import { RankingChart } from '../../components/RankingChart';
 import { BADGE_CATALOGO } from '../../lib/stars';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { Colors, Radius, Spacing, Font, Glass } from '../../constants/theme';
 import type {
   Centro, EventoStorico, ManoDominante, Posizione, Prenotazione, Tessera,
 } from '../../types/models';
@@ -133,7 +134,7 @@ export default function Profilo() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Card profilo */}
-        <View style={s.headCard}>
+        <Card style={s.headCard}>
           <View style={s.headTop}>
             <View style={s.avatarWrap}>
               <View style={s.avatarBig}>
@@ -149,9 +150,7 @@ export default function Profilo() {
               <Text style={s.headName}>{nome}</Text>
               <Text style={s.headNick}>{me?.profilo?.nickname ? `"${me.profilo.nickname}"` : 'Nessun nickname'}</Text>
             </View>
-            <Pressable style={s.gear} onPress={() => router.push('/modifica-profilo')}>
-              <Ionicons name="settings-outline" size={18} color={Colors.white} />
-            </Pressable>
+            <IconButton icon="settings-outline" variant="dark" onPress={() => router.push('/modifica-profilo')} />
           </View>
 
           <View style={s.headStats}>
@@ -164,26 +163,33 @@ export default function Profilo() {
               <Muted>Mano</Muted>
             </View>
           </View>
-        </View>
+        </Card>
 
         {/* Sport da visualizzare: sotto le info del giocatore, sopra i tab —
             filtra Ranking e Partite qui sotto. */}
         <Pressable style={s.sportBar} onPress={() => setSportModaleAperto(true)}>
+          <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
           <Ionicons name="tennisball-outline" size={16} color={Colors.navyDeep} />
           <Text style={s.sportBarText}>{sport}</Text>
           <Ionicons name="chevron-down" size={14} color={Colors.slate} />
         </Pressable>
 
         {/* Tab interne */}
-        <View style={s.tabs}>
-          <TabBtn icon="trophy-outline" label="Ranking" active={tab === 'ranking'} onPress={() => setTab('ranking')} />
-          <TabBtn icon="git-compare-outline" label="Partite" active={tab === 'partite'} onPress={() => setTab('partite')} />
-          <TabBtn icon="ribbon-outline" label="Badge" active={tab === 'badge'} onPress={() => setTab('badge')} />
-          <TabBtn icon="document-text-outline" label="Tesseramento" active={tab === 'tesseramento'} onPress={() => setTab('tesseramento')} />
-        </View>
+        <Segmented
+          value={tab}
+          onChange={(v) => setTab(v as TabP)}
+          style={{ marginTop: Spacing.md }}
+          options={[
+            { value: 'ranking', label: 'Ranking', icon: 'trophy-outline' },
+            { value: 'partite', label: 'Partite', icon: 'git-compare-outline' },
+            { value: 'badge', label: 'Badge', icon: 'ribbon-outline' },
+            { value: 'tesseramento', label: 'Tessera', icon: 'document-text-outline' },
+          ]}
+        />
 
         {tab === 'ranking' && (
-          <View style={s.panel}>
+          <Card style={s.panel}>
             <Text style={s.panelTitle}>Il tuo ranking — {sport}</Text>
             {caricandoRanking ? (
               <ActivityIndicator color={Colors.gold} style={{ marginVertical: Spacing.xl }} />
@@ -202,7 +208,7 @@ export default function Profilo() {
                 <RankingChart eventi={storico} />
               </>
             ) : (
-              <View style={s.emptyBox}>
+              <Card style={s.emptyBox}>
                 <Text style={s.emptyIcon}>🎯</Text>
                 <Text style={s.emptyTitle}>Zero partite, zero gloria.</Text>
                 <Muted style={{ textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
@@ -212,21 +218,17 @@ export default function Profilo() {
                   <Ionicons name="trending-up" size={16} color={Colors.navyDeep} />
                   <Text style={s.scopriText}>Scopri il tuo ranking</Text>
                 </Pressable>
-              </View>
+              </Card>
             )}
-          </View>
+          </Card>
         )}
 
         {tab === 'partite' && (
-          <View style={s.panel}>
+          <Card style={s.panel}>
             <View style={s.meseNav}>
-              <Pressable onPress={() => cambiaMeseNav(-1)} style={s.meseNavBtn}>
-                <Ionicons name="chevron-back" size={18} color={Colors.navyDeep} />
-              </Pressable>
+              <IconButton icon="chevron-back" variant="glass" size={32} color={Colors.navyDeep} onPress={() => cambiaMeseNav(-1)} />
               <Text style={s.meseNavTitolo}>{cap(nomeMeseNav)}</Text>
-              <Pressable onPress={() => cambiaMeseNav(1)} style={s.meseNavBtn}>
-                <Ionicons name="chevron-forward" size={18} color={Colors.navyDeep} />
-              </Pressable>
+              <IconButton icon="chevron-forward" variant="glass" size={32} color={Colors.navyDeep} onPress={() => cambiaMeseNav(1)} />
             </View>
 
             <View style={[s.filtriRiga, { flexWrap: 'wrap' }]}>
@@ -241,8 +243,8 @@ export default function Profilo() {
             ) : partiteFiltrate.map((p) => {
               const vinta = me ? haVinto(p, me.id) : null;
               return (
-                <View key={p.id} style={s.matchRow}>
-                  <View style={s.matchIcon}><Ionicons name="tennisball" size={18} color={Colors.gold} /></View>
+                <Card key={p.id} style={s.matchRow}>
+                  <IconBadge icon="tennisball" size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={s.matchName}>{p.campo?.nome ?? 'Campo'}{p.tipo === 'torneo' ? ' · evento' : ''}</Text>
                     <Muted>{p.data} · {p.inizio?.slice(0, 5)}</Muted>
@@ -252,31 +254,31 @@ export default function Profilo() {
                       <Text style={[s.esitoText, { color: vinta ? Colors.green : Colors.red }]}>{vinta ? 'Vittoria' : 'Sconfitta'}</Text>
                     </View>
                   )}
-                </View>
+                </Card>
               );
             })}
-          </View>
+          </Card>
         )}
 
         {tab === 'badge' && (
-          <View style={s.panel}>
+          <Card style={s.panel}>
             <Text style={s.panelTitle}>Badge</Text>
             <View style={s.badgeGrid}>
               {BADGE_CATALOGO.map((b, i) => (
-                <View key={b.id} style={[s.badge, i > 1 && s.badgeLocked]}>
+                <Card key={b.id} style={[s.badge, i > 1 && s.badgeLocked]}>
                   <Text style={s.badgeIcon}>{b.icona}</Text>
                   <Text style={s.badgeName}>{b.nome}</Text>
                   <Muted style={{ textAlign: 'center', fontSize: 11 }}>{i <= 1 ? 'Ottenuto' : 'Bloccato'}</Muted>
-                </View>
+                </Card>
               ))}
             </View>
-          </View>
+          </Card>
         )}
 
         {tab === 'tesseramento' && (
-          <View style={s.panel}>
+          <Card style={s.panel}>
             <Text style={s.panelTitle}>Tessera PSL</Text>
-            <View style={s.tesseraBox}>
+            <Card style={s.tesseraBox}>
               <View style={s.tesseraHead}>
                 <Ionicons name="card" size={22} color={Colors.gold} />
                 <Text style={s.tesseraStato}>{tessera?.stato === 'attiva' ? 'Attiva' : 'Da rinnovare'}</Text>
@@ -287,17 +289,21 @@ export default function Profilo() {
                 <Ionicons name="finger-print" size={16} color={Colors.navyDeep} />
                 <Text style={s.otpText}>Rinnova con firma OTP</Text>
               </Pressable>
-            </View>
-          </View>
+            </Card>
+          </Card>
         )}
 
         {/* Azioni finali */}
         <View style={s.footRow}>
           <Pressable style={s.footBtn} onPress={() => me && router.push(`/giocatore/${me.id}`)}>
+            <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
             <Ionicons name="open-outline" size={16} color={Colors.navyDeep} />
             <Text style={s.footText}>Profilo pubblico</Text>
           </Pressable>
           <Pressable style={s.footBtn} onPress={signOut}>
+            <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
             <Ionicons name="log-out-outline" size={16} color={Colors.red} />
             <Text style={[s.footText, { color: Colors.red }]}>Esci</Text>
           </Pressable>
@@ -310,6 +316,8 @@ export default function Profilo() {
       <Modal visible={sportModaleAperto} transparent animationType="fade" onRequestClose={() => setSportModaleAperto(false)}>
         <Pressable style={s.modaleSfondo} onPress={() => setSportModaleAperto(false)}>
           <View style={s.modaleBox}>
+            <BlurView intensity={Glass.blurStrong} tint="light" style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bgStrong }]} />
             <Text style={s.modaleTitolo}>Sport da visualizzare</Text>
             {(centro?.sport_attivi ?? ['Padel']).map((sp) => (
               <Pressable key={sp} style={s.modaleRiga} onPress={() => { setSport(sp); setSportModaleAperto(false); }}>
@@ -326,19 +334,10 @@ export default function Profilo() {
 
 function cap(v: string): string { return v.charAt(0).toUpperCase() + v.slice(1); }
 
-function TabBtn({ icon, label, active, onPress }: { icon: any; label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[s.tabBtn, active && s.tabBtnActive]}>
-      <Ionicons name={icon} size={17} color={active ? Colors.white : Colors.slate} />
-      <Text style={[s.tabText, active && s.tabTextActive]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
-    </Pressable>
-  );
-}
-
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.lg },
-  headCard: { backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
+  headCard: {},
   headTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   avatarWrap: { width: 68, height: 68 },
   avatarBig: { width: 68, height: 68, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -347,53 +346,45 @@ const s = StyleSheet.create({
   camBtn: { position: 'absolute', bottom: -4, right: -4, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.navyCard },
   headName: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
   headNick: { color: Colors.slate, fontSize: Font.body, fontStyle: 'italic' },
-  gear: { width: 38, height: 38, borderRadius: Radius.md, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center' },
   headStats: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  hStat: { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
+  hStat: { flex: 1, backgroundColor: Glass.bgStrong, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
   hStatValue: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3 },
-  sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: Colors.navyLine + '33' },
+  sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: Glass.border, overflow: 'hidden' },
   sportBarText: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.small },
-  tabs: { flexDirection: 'row', backgroundColor: '#F7F8FA', borderRadius: Radius.md, padding: 4, marginTop: Spacing.md, gap: 4 },
-  tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, paddingHorizontal: 2, borderRadius: Radius.sm },
-  tabBtnActive: { backgroundColor: Colors.navyDeep },
-  tabText: { color: Colors.slate, fontWeight: '700', fontSize: 10.5 },
-  tabTextActive: { color: Colors.white },
-  panel: { backgroundColor: '#F7F8FA', borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md },
+  panel: { marginTop: Spacing.md },
   panelTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.md },
   rankRow: { flexDirection: 'row', gap: Spacing.md },
-  rankBox: { flex: 1, backgroundColor: '#EEF1F5', borderRadius: Radius.md, padding: Spacing.lg, alignItems: 'center' },
+  rankBox: { flex: 1, backgroundColor: Glass.bgStrong, borderRadius: Radius.md, padding: Spacing.lg, alignItems: 'center' },
   rankScore: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900' },
   rankBoxLabel: { color: Colors.slate, fontSize: Font.tiny, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
-  emptyBox: { backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.xl, alignItems: 'center', marginTop: Spacing.md },
+  emptyBox: { alignItems: 'center', marginTop: Spacing.md },
   emptyIcon: { fontSize: 34 },
   emptyTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
   scopriBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.gold, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderRadius: Radius.pill, marginTop: Spacing.lg },
   scopriText: { color: Colors.navyDeep, fontWeight: '800' },
-  meseNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.sm, marginBottom: Spacing.md },
-  meseNavBtn: { width: 32, height: 32, borderRadius: Radius.compact, backgroundColor: '#EEF1F5', alignItems: 'center', justifyContent: 'center' },
+  meseNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
   meseNavTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body },
   filtriRiga: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
-  matchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm },
-  matchIcon: { width: 40, height: 40, borderRadius: Radius.sm, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
+  matchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
   matchName: { color: Colors.navyDeep, fontWeight: '700' },
   esitoPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill },
   esitoText: { fontWeight: '800', fontSize: Font.tiny, textTransform: 'uppercase' },
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  badge: { width: '30%', backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 4 },
+  badge: { width: '30%', alignItems: 'center', gap: 4 },
   badgeLocked: { opacity: 0.45 },
   badgeIcon: { fontSize: 26 },
   badgeName: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.small, textAlign: 'center' },
-  tesseraBox: { backgroundColor: Colors.navyDeep, borderRadius: Radius.lg, padding: Spacing.lg },
+  tesseraBox: {},
   tesseraHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tesseraStato: { color: Colors.gold, fontWeight: '800', fontSize: Font.small },
-  tesseraNum: { color: Colors.white, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.md, letterSpacing: 1 },
+  tesseraNum: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.md, letterSpacing: 1 },
   otpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.gold, paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.lg },
   otpText: { color: Colors.navyDeep, fontWeight: '800' },
   footRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
-  footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: Radius.md, paddingVertical: Spacing.lg },
+  footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: Radius.md, borderWidth: 1, borderColor: Glass.border, paddingVertical: Spacing.lg, overflow: 'hidden' },
   footText: { color: Colors.navyDeep, fontWeight: '800' },
   modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
-  modaleBox: { width: '100%', maxWidth: 340, backgroundColor: Colors.surface, borderRadius: Radius.card, padding: Spacing.lg },
+  modaleBox: { width: '100%', maxWidth: 340, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: Glass.border },
   modaleTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
   modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
   modaleRigaText: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '600' },

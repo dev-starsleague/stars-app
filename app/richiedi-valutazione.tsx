@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getCentri, richiediValutazione } from '../lib/api';
-import { Muted } from '../components/ui';
+import { Card, IconBadge, IconButton, Muted } from '../components/ui';
 import { Colors, Radius, Spacing, Font } from '../constants/theme';
 import type { Centro } from '../types/models';
 
@@ -38,9 +38,9 @@ export default function RichiediValutazione() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
+        <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Scopri il tuo ranking</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 38 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.scroll}>
@@ -50,13 +50,15 @@ export default function RichiediValutazione() {
 
         {centri.length === 0 && <ActivityIndicator color={Colors.gold} style={{ marginTop: Spacing.xl }} />}
         {centri.map((c) => (
-          <Pressable key={c.id} style={s.row} onPress={() => scegli(c)} disabled={inviando !== null}>
-            <View style={s.icon}><Ionicons name="business" size={20} color={Colors.gold} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.nome}>{c.nome}</Text>
-              {c.citta ? <Muted>{c.citta}</Muted> : null}
-            </View>
-            {inviando === c.id ? <ActivityIndicator color={Colors.gold} /> : <Ionicons name="chevron-forward" size={20} color={Colors.slate} />}
+          <Pressable key={c.id} onPress={() => scegli(c)} disabled={inviando !== null}>
+            <Card style={s.row}>
+              <IconBadge icon="business" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.nome}>{c.nome}</Text>
+                {c.citta ? <Muted>{c.citta}</Muted> : null}
+              </View>
+              {inviando === c.id ? <ActivityIndicator color={Colors.gold} /> : <Ionicons name="chevron-forward" size={20} color={Colors.slate} />}
+            </Card>
           </Pressable>
         ))}
       </ScrollView>
@@ -69,7 +71,6 @@ const s = StyleSheet.create({
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
   title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   scroll: { padding: Spacing.lg, paddingTop: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.card, padding: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.navyLine + '33' },
-  icon: { width: 44, height: 44, borderRadius: Radius.md, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
   nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
 });

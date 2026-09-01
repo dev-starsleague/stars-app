@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { useAuth } from '../../lib/auth';
 import { getCampi, getPrenotazioniGiorno, creaPrenotazione } from '../../lib/api';
 import { CENTRO_ID } from '../../lib/mockData';
 import { Card, H1, H2, Muted, Button, Pill } from '../../components/ui';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { Colors, Radius, Spacing, Font, Glass } from '../../constants/theme';
 import type { Campo, Prenotazione, Tariffa } from '../../types/models';
 
 const GIORNI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
@@ -128,9 +129,11 @@ export default function Prenota() {
 
       {slotSel && (
         <View style={s.bar}>
+          <BlurView intensity={Glass.blurStrong} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, s.barTint]} />
           <View style={{ flex: 1 }}>
             <Text style={s.barTitle}>{campoSel?.nome} · {slotSel}–{addMin(slotSel, DURATA)}</Text>
-            <Muted>{GIORNI[dataSel.getDay()]} {dataSel.getDate()} · €{prezzoSlot(slotSel)}</Muted>
+            <Muted style={{ color: '#93A6C0' }}>{GIORNI[dataSel.getDay()]} {dataSel.getDate()} · €{prezzoSlot(slotSel)}</Muted>
           </View>
           <Button title="Conferma" onPress={conferma} loading={saving} style={{ paddingHorizontal: Spacing.xl }} />
         </View>
@@ -176,6 +179,7 @@ const s = StyleSheet.create({
   slotPrezzo: { color: Colors.slate, fontSize: Font.tiny, marginTop: 2 },
   slotTextOcc: { color: Colors.white, fontSize: Font.tiny },
   slotTextSel: { color: Colors.navyDeep },
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, backgroundColor: Colors.navyDeep, borderTopWidth: 1, borderTopColor: Colors.navyLine + '55' },
+  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' },
+  barTint: { backgroundColor: 'rgba(30, 49, 74, 0.82)' },
   barTitle: { color: Colors.white, fontWeight: '700', fontSize: Font.body },
 });

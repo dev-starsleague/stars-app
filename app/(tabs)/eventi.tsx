@@ -1,12 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getEventi, iscrivitiEvento } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted } from '../../components/ui';
+import { Button, Card, Chip, IconBadge, Input, Muted, Segmented } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import type { EventoCustom } from '../../types/models';
 
@@ -47,43 +47,33 @@ export default function Eventi() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.gold} />}>
 
-        {/* Card filtri bianca */}
-        <View style={s.filterCard}>
-          <View style={s.subtabs}>
-            <Pressable style={[s.subtab, tabE === 'attivi' && s.subtabActive]} onPress={() => setTabE('attivi')}>
-              <Text style={[s.subtabText, tabE === 'attivi' && s.subtabTextActive]}>Attivi ({attivi.length})</Text>
-            </Pressable>
-            <Pressable style={[s.subtab, tabE === 'miei' && s.subtabActive]} onPress={() => setTabE('miei')}>
-              <Text style={[s.subtabText, tabE === 'miei' && s.subtabTextActive]}>I miei ({Object.values(iscritti).filter(Boolean).length})</Text>
-            </Pressable>
-            <Pressable style={[s.subtab, tabE === 'passati' && s.subtabActive]} onPress={() => setTabE('passati')}>
-              <Text style={[s.subtabText, tabE === 'passati' && s.subtabTextActive]}>Passati ({passati.length})</Text>
-            </Pressable>
-          </View>
+        {/* Card filtri vetro liquido */}
+        <Card style={s.filterCard}>
+          <Segmented
+            value={tabE}
+            onChange={(v) => setTabE(v as TabE)}
+            options={[
+              { value: 'attivi', label: `Attivi (${attivi.length})` },
+              { value: 'miei', label: `I miei (${Object.values(iscritti).filter(Boolean).length})` },
+              { value: 'passati', label: `Passati (${passati.length})` },
+            ]}
+            style={{ marginBottom: Spacing.md }}
+          />
 
-          <View style={s.search}>
-            <Ionicons name="search" size={18} color={Colors.slate} />
-            <TextInput placeholder="Cerca evento o centro…" placeholderTextColor={Colors.slate}
-              style={s.searchInput} value={q} onChangeText={setQ} />
-          </View>
+          <Input icon="search" placeholder="Cerca evento o centro…" value={q} onChangeText={setQ} style={{ marginBottom: Spacing.md }} />
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={s.cats}>
               {(['tutti', 'lezioni', 'friendly', 'competitivi', 'clinic'] as Cat[]).map((c) => (
-                <Pressable key={c} onPress={() => setCat(c)} style={[s.cat, cat === c && s.catActive]}>
-                  <Text style={[s.catText, cat === c && s.catTextActive]}>{cap(c)}</Text>
-                </Pressable>
+                <Chip key={c} label={cap(c)} active={cat === c} onPress={() => setCat(c)} />
               ))}
-              <Pressable style={s.cat}>
-                <Ionicons name="star-outline" size={13} color={Colors.slate} />
-                <Text style={s.catText}> Preferiti</Text>
-              </Pressable>
+              <Chip label="⭐ Preferiti" />
             </View>
           </ScrollView>
-        </View>
+        </Card>
 
         {demoMode ? (
-          <View style={s.demoBadge}><Text style={s.demoText}>Dati demo</Text></View>
+          <Card style={s.demoBadge}><Text style={s.demoText}>Dati demo</Text></Card>
         ) : null}
 
         {filtrati.length === 0 ? (
@@ -92,9 +82,9 @@ export default function Eventi() {
           const isIscritto = iscritti[e.id];
           const chiuso = e.stato !== 'ready';
           return (
-            <View key={e.id} style={s.card}>
+            <Card key={e.id} style={s.card}>
               <View style={s.cardHead}>
-                <View style={s.cardIcon}><Ionicons name="trophy" size={20} color={Colors.gold} /></View>
+                <IconBadge icon="trophy" />
                 <View style={{ flex: 1 }}>
                   <Text style={s.cardName}>{e.nome}</Text>
                   <Muted>{divisione(e.divisione)} · {e.iscritti_count ?? 0}/{e.max_partecipanti ?? '∞'}</Muted>
@@ -107,11 +97,9 @@ export default function Eventi() {
               {!chiuso && (isIscritto ? (
                 <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={Colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
               ) : (
-                <Pressable style={s.iscrivitiBtn} onPress={() => iscriviti(e)}>
-                  <Text style={s.iscrivitiText}>Iscriviti alla partita</Text>
-                </Pressable>
+                <Button title="Iscriviti alla partita" onPress={() => iscriviti(e)} style={{ marginTop: Spacing.md }} />
               ))}
-            </View>
+            </Card>
           );
         })}
         <View style={{ height: 20 }} />
@@ -126,31 +114,17 @@ function divisione(d: string) { return d === 'misto' ? 'Misto' : d === 'maschile
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { padding: Spacing.lg },
-  filterCard: { backgroundColor: '#F7F8FA', borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.lg },
-  subtabs: { flexDirection: 'row', gap: 4, marginBottom: Spacing.md },
-  subtab: { flex: 1, paddingVertical: 10, borderRadius: Radius.pill, alignItems: 'center' },
-  subtabActive: { backgroundColor: Colors.gold },
-  subtabText: { color: Colors.slate, fontWeight: '700', fontSize: Font.small },
-  subtabTextActive: { color: Colors.navyDeep },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: Radius.md, paddingHorizontal: Spacing.md, marginBottom: Spacing.md },
-  searchInput: { flex: 1, color: Colors.navyDeep, height: 46, fontSize: Font.body },
+  filterCard: { marginBottom: Spacing.lg },
   cats: { flexDirection: 'row', gap: Spacing.sm },
-  cat: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8EBEF', paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.pill },
-  catActive: { backgroundColor: Colors.navyDeep },
-  catText: { color: Colors.slate, fontWeight: '700', fontSize: Font.small },
-  catTextActive: { color: Colors.white },
-  demoBadge: { borderWidth: 1, borderColor: Colors.gold + '66', borderStyle: 'dashed', borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.lg },
+  demoBadge: { marginBottom: Spacing.lg },
   demoText: { color: Colors.gold, fontWeight: '700', fontSize: Font.small },
   empty: { color: Colors.slate, textAlign: 'center', marginTop: Spacing.xxl, fontSize: Font.body },
-  card: { backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.navyLine + '44' },
+  card: { marginBottom: Spacing.md },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  cardIcon: { width: 44, height: 44, borderRadius: Radius.md, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
   cardName: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
   cardDesc: { color: Colors.slateLight, fontSize: Font.small, marginTop: Spacing.md, lineHeight: 20 },
   pill: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.pill },
   pillText: { fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },
   iscritto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: Spacing.md, paddingVertical: Spacing.sm },
   iscrittoText: { color: Colors.green, fontWeight: '700' },
-  iscrivitiBtn: { backgroundColor: Colors.gold, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.md },
-  iscrivitiText: { color: Colors.navyDeep, fontWeight: '800' },
 });

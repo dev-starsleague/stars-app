@@ -1,13 +1,13 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getAmici, cercaGiocatori, inviaRichiestaAmicizia, accettaAmicizia } from '../lib/api';
-import { Card, H2, Muted, Avatar, Button, Chip } from '../components/ui';
-import { Colors, Radius, Spacing, Font } from '../constants/theme';
+import { Card, H2, Muted, Avatar, Button, Chip, IconButton, Input } from '../components/ui';
+import { Colors, Spacing, Font } from '../constants/theme';
 import type { Amicizia, Giocatore } from '../types/models';
 
 export default function Amici() {
@@ -41,9 +41,9 @@ export default function Amici() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()} style={s.back}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
+        <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Amici</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 38 }} />
       </View>
 
       <View style={s.tabs}>
@@ -91,11 +91,7 @@ export default function Amici() {
           </>
         ) : (
           <>
-            <View style={s.search}>
-              <Ionicons name="search" size={18} color={Colors.slate} />
-              <TextInput placeholder="Cerca per nome o cognome" placeholderTextColor={Colors.slate}
-                style={s.searchInput} value={q} onChangeText={cerca} autoFocus />
-            </View>
+            <Input icon="search" placeholder="Cerca per nome o cognome" value={q} onChangeText={cerca} autoFocus style={{ marginBottom: Spacing.lg }} />
             {risultati.map((g) => (
               <Card key={g.id} style={s.row}>
                 <Pressable onPress={() => router.push(`/giocatore/${g.id}`)} style={s.rowInner}>
@@ -105,9 +101,7 @@ export default function Amici() {
                     <Muted>{g.profilo?.nickname ?? 'Padel'}</Muted>
                   </View>
                 </Pressable>
-                <Pressable onPress={() => aggiungi(g)} style={s.addBtn}>
-                  <Ionicons name="person-add" size={18} color={Colors.navyDeep} />
-                </Pressable>
+                <IconButton icon="person-add" variant="solid" size={40} onPress={() => aggiungi(g)} />
               </Card>
             ))}
             {q.length >= 2 && risultati.length === 0 && <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun giocatore trovato.</Muted>}
@@ -122,14 +116,10 @@ export default function Amici() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  back: { width: 24 },
   title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   tabs: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
   scroll: { padding: Spacing.lg, paddingTop: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
   rowInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
   nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.navyCard, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  searchInput: { flex: 1, color: Colors.navyDeep, height: 50, fontSize: Font.body },
-  addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
 });

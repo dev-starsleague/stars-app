@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../lib/auth';
 import { getStarsCoinPerCentro } from '../lib/api';
@@ -38,6 +39,8 @@ export function AppHeader({ notifiche = 0 }: { notifiche?: number }) {
       </Pressable>
       <View style={s.right}>
         <Pressable style={s.coin} onPress={() => router.push('/stars-coin')}>
+          <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
           <Ionicons name="star" size={14} color={Colors.gold} />
           <Text style={s.coinText}>{totale}</Text>
           <Ionicons name="bag-outline" size={14} color={Colors.slateLight} />
@@ -62,7 +65,7 @@ const s = StyleSheet.create({
   logo: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   brand: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
   right: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  coin: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.navyCard, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.pill, borderWidth: 1, borderColor: Colors.navyLine + '55' },
+  coin: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.pill, borderWidth: 1, borderColor: Glass.border, overflow: 'hidden' },
   coinText: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.small },
   bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getCircuito, getClassificaNazionale, getStars } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
-import { Muted } from '../../components/ui';
+import { Card, IconBadge, Muted } from '../../components/ui';
 import { Colors, Radius, Spacing, Font } from '../../constants/theme';
 import type { CircuitoNazionale, RigaClassificaNazionale, StarsProfilo } from '../../types/models';
 
@@ -41,11 +41,11 @@ export default function Stars() {
 
         {/* Card stagione */}
         {circ && (
-          <View style={s.seasonCard}>
+          <Card style={s.seasonCard}>
             <Text style={s.seasonLabel}>STAGIONE {circ.stagione}</Text>
             <View style={s.seasonHead}>
               <Text style={s.seasonName}>{circ.nome}</Text>
-              <View style={s.trophy}><Ionicons name="trophy" size={22} color={Colors.gold} /></View>
+              <IconBadge icon="trophy" size={48} />
             </View>
             <Muted style={{ marginTop: 4 }}>{circ.centri} centri · {circ.giocatori.toLocaleString('it-IT')} giocatori</Muted>
             <View style={s.progressRow}>
@@ -53,7 +53,7 @@ export default function Stars() {
               <Text style={s.progressPct}>{circ.progresso}%</Text>
             </View>
             <View style={s.progressBg}><View style={[s.progressFill, { width: `${circ.progresso}%` }]} /></View>
-          </View>
+          </Card>
         )}
 
         {/* Stat personali */}
@@ -65,7 +65,7 @@ export default function Stars() {
 
         {/* Classifica nazionale */}
         <Text style={s.sectionTitle}>Classifica nazionale</Text>
-        <View style={s.listCard}>
+        <Card style={s.listCard}>
           {classifica.map((r, i) => (
             <View key={r.giocatore_id} style={[s.row, i < classifica.length - 1 && s.rowBorder]}>
               <View style={s.posWrap}>
@@ -85,7 +85,7 @@ export default function Stars() {
               </View>
             </View>
           ))}
-        </View>
+        </Card>
         <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
@@ -94,11 +94,11 @@ export default function Stars() {
 
 function StatCard({ icon, value, label, trend }: { icon: any; value: string; label: string; trend?: boolean }) {
   return (
-    <View style={s.statCard}>
+    <Card style={s.statCard}>
       <Ionicons name={icon} size={20} color={trend ? Colors.green : Colors.gold} />
       <Text style={s.statValue}>{value}</Text>
       <Text style={s.statLabel}>{label}</Text>
-    </View>
+    </Card>
   );
 }
 
@@ -108,21 +108,20 @@ const s = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   brandText: { color: Colors.slate, fontSize: Font.small, fontWeight: '700' },
   title: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
-  seasonCard: { backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: 2, borderColor: Colors.gold + '55' },
+  seasonCard: {},
   seasonLabel: { color: Colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 1 },
   seasonHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   seasonName: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '900' },
-  trophy: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.lg, marginBottom: 6 },
   progressPct: { color: Colors.navyDeep, fontWeight: '800' },
   progressBg: { height: 8, borderRadius: 4, backgroundColor: Colors.bg, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: Colors.gold, borderRadius: 4 },
   stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
-  statCard: { flex: 1, backgroundColor: Colors.white, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 4 },
+  statCard: { flex: 1, alignItems: 'center', gap: 4 },
   statValue: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
   statLabel: { color: Colors.slate, fontSize: Font.small },
   sectionTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800', marginTop: Spacing.xl, marginBottom: Spacing.md },
-  listCard: { backgroundColor: Colors.white, borderRadius: Radius.lg, paddingHorizontal: Spacing.lg },
+  listCard: {},
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.navyLine + '22' },
   posWrap: { width: 28, alignItems: 'center' },

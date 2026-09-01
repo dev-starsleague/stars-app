@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getRanking, inviaRichiestaAmicizia } from '../../lib/api';
-import { Card, H2, Muted, Avatar, Button, Divider, Pill } from '../../components/ui';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { Card, H2, Muted, Avatar, Button, Divider, IconButton, Pill } from '../../components/ui';
+import { Colors, Spacing, Font } from '../../constants/theme';
 import type { Giocatore } from '../../types/models';
 
 export default function GiocatoreProfilo() {
@@ -35,9 +35,9 @@ export default function GiocatoreProfilo() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
+        <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Profilo</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 38 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -48,8 +48,8 @@ export default function GiocatoreProfilo() {
         </View>
 
         <View style={s.stats}>
-          <View style={s.stat}><Text style={s.statValue}>{rank ? rank.toFixed(2) : '—'}</Text><Muted>Ranking</Muted></View>
-          <View style={s.stat}><Text style={s.statValue}>{g?.posizione ? cap(g.posizione) : '—'}</Text><Muted>Posizione</Muted></View>
+          <Card style={s.stat}><Text style={s.statValue}>{rank ? rank.toFixed(2) : '—'}</Text><Muted>Ranking</Muted></Card>
+          <Card style={s.stat}><Text style={s.statValue}>{g?.posizione ? cap(g.posizione) : '—'}</Text><Muted>Posizione</Muted></Card>
         </View>
 
         <Card style={{ marginTop: Spacing.lg }}>
@@ -83,7 +83,7 @@ const s = StyleSheet.create({
   header: { alignItems: 'center', gap: 6, marginTop: Spacing.md },
   nome: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800', marginTop: Spacing.sm },
   stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
-  stat: { flex: 1, backgroundColor: Colors.navyCard, borderRadius: Radius.lg, padding: Spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: Colors.navyLine + '55' },
+  stat: { flex: 1, alignItems: 'center' },
   statValue: { color: Colors.gold, fontSize: Font.h2, fontWeight: '900' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowValue: { color: Colors.navyDeep, fontWeight: '600', fontSize: Font.body },

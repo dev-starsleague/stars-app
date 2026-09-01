@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { updateProfilo } from '../lib/api';
-import { Muted, Button, Chip } from '../components/ui';
-import { Colors, Radius, Spacing, Font } from '../constants/theme';
+import { Button, Card, Chip, IconButton, Input, Muted } from '../components/ui';
+import { Colors, Spacing, Font } from '../constants/theme';
 import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../types/models';
 
 // Stessi campi del form "Modifica giocatore" del gestionale
@@ -98,9 +98,9 @@ export default function ModificaProfilo() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.topbar}>
-        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={Colors.navyDeep} /></Pressable>
+        <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Modifica profilo</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 38 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
@@ -178,9 +178,9 @@ export default function ModificaProfilo() {
                   <View style={s.fasceBox}>
                     {(disponibilita[gi] ?? []).map((f, idx) => (
                       <View key={idx} style={s.fasciaRiga}>
-                        <TextInput style={s.orario} value={f.da} onChangeText={(v) => modificaFascia(gi, idx, 'da', v)} placeholder="18:00" placeholderTextColor={Colors.slate} />
+                        <Input style={s.orario} value={f.da} onChangeText={(v) => modificaFascia(gi, idx, 'da', v)} placeholder="18:00" />
                         <Text style={s.fasciaSep}>–</Text>
-                        <TextInput style={s.orario} value={f.a} onChangeText={(v) => modificaFascia(gi, idx, 'a', v)} placeholder="20:00" placeholderTextColor={Colors.slate} />
+                        <Input style={s.orario} value={f.a} onChangeText={(v) => modificaFascia(gi, idx, 'a', v)} placeholder="20:00" />
                         <Pressable onPress={() => rimuoviFascia(gi, idx)} style={s.fasciaRimuovi}>
                           <Ionicons name="close" size={16} color={Colors.red} />
                         </Pressable>
@@ -208,13 +208,13 @@ function Sezione({ titolo, badge, aperta, onToggle, children }: {
   titolo: string; badge?: number; aperta: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   return (
-    <View style={s.sezione}>
+    <Card style={s.sezione}>
       <Pressable style={s.sezioneHead} onPress={onToggle}>
         <Text style={s.sezioneTitolo}>{titolo}{badge ? ` · ${badge}` : ''}</Text>
         <Ionicons name={aperta ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.slate} />
       </Pressable>
       {aperta && <View style={s.sezioneBody}>{children}</View>}
-    </View>
+    </Card>
   );
 }
 
@@ -222,7 +222,7 @@ function Field({ label, style, ...rest }: any) {
   return (
     <View style={style}>
       <Muted style={{ marginBottom: Spacing.sm }}>{label}</Muted>
-      <TextInput placeholderTextColor={Colors.slate} style={s.input} {...rest} />
+      <Input {...rest} />
     </View>
   );
 }
@@ -233,19 +233,18 @@ const s = StyleSheet.create({
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
   title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
   scroll: { padding: Spacing.lg, paddingTop: 0, gap: Spacing.lg },
-  input: { backgroundColor: Colors.navyCard, borderRadius: Radius.md, color: Colors.navyDeep, height: 50, paddingHorizontal: Spacing.lg, fontSize: Font.body, borderWidth: 1, borderColor: Colors.navyLine + '55' },
   chips: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   riga2: { flexDirection: 'row', gap: Spacing.md },
-  sezione: { backgroundColor: Colors.surface, borderRadius: Radius.card, borderWidth: 1, borderColor: Colors.navyLine + '22', overflow: 'hidden' },
-  sezioneHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
+  sezione: {},
+  sezioneHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg, margin: -Spacing.lg, marginBottom: 0 },
   sezioneTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body, textTransform: 'uppercase', letterSpacing: 0.3 },
-  sezioneBody: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.lg },
+  sezioneBody: { paddingTop: Spacing.lg, gap: Spacing.lg },
   giornoBlocco: { marginBottom: Spacing.sm },
   giornoRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 },
   giornoNome: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.body },
   fasceBox: { marginLeft: 28, gap: Spacing.sm },
   fasciaRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  orario: { backgroundColor: Colors.navyCard, borderRadius: Radius.compact, color: Colors.navyDeep, height: 38, width: 76, textAlign: 'center', fontSize: Font.small, borderWidth: 1, borderColor: Colors.navyLine + '55' },
+  orario: { width: 76, height: 38 },
   fasciaSep: { color: Colors.slate },
   fasciaRimuovi: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
   aggiungiFascia: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
