@@ -1,5 +1,5 @@
 import type { Fascia } from '../types/models';
-import { Colors } from '../constants/theme';
+import type { AppColors } from '../constants/theme';
 
 // Soglie fasce basate sullo score di ranking (padel), stile PSL.
 // Spark = non ancora stimato / nessuna partita.
@@ -21,17 +21,22 @@ export function fasciaDaScore(score: number | null | undefined, stimato = true):
 }
 
 // Colori pallino per fascia (come i chip colorati nella schermata Classifica).
-export const COLORE_FASCIA: Record<Fascia, string> = {
-  Spark: Colors.slate,
-  '1★': '#3B82F6',
-  '2★': '#06B6D4',
-  '3★': '#22C55E',
-  '4★': '#84CC16',
-  '5★': Colors.gold,
-  '6★': '#F97316',
-  '7★': '#EF4444',
-  '8★': '#A855F7',
-};
+// Funzione (non oggetto statico) perché Spark/5★ leggono dal tema corrente
+// via useTheme() nel chiamante — vedi lib/theme.tsx.
+export function coloreFascia(fascia: Fascia, colors: AppColors): string {
+  const mappa: Record<Fascia, string> = {
+    Spark: colors.slate,
+    '1★': '#3B82F6',
+    '2★': '#06B6D4',
+    '3★': '#22C55E',
+    '4★': '#84CC16',
+    '5★': colors.gold,
+    '6★': '#F97316',
+    '7★': '#EF4444',
+    '8★': '#A855F7',
+  };
+  return mappa[fascia];
+}
 
 export const FASCE_ORDINATE: Fascia[] = ['Spark', '1★', '2★', '3★', '4★', '5★', '6★'];
 

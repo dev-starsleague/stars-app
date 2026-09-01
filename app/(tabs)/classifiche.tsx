@@ -1,11 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { getClassifica } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Muted, Segmented } from '../../components/ui';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { ClassificaMensile, Genere } from '../../types/models';
 
 // "Star del mese": la classifica mensile per punti del gestionale
@@ -14,6 +15,8 @@ import type { ClassificaMensile, Genere } from '../../types/models';
 // misura il livello di gioco, questo premia chi ha giocato/vinto di più nel
 // mese corrente).
 export default function StarDelMese() {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [genere, setGenere] = useState<Genere>('M');
   const [lista, setLista] = useState<ClassificaMensile[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -30,7 +33,7 @@ export default function StarDelMese() {
     <SafeAreaView style={s.safe} edges={['top']}>
       <AppHeader />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.gold} />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}>
 
         {/* Card filtri vetro liquido */}
         <Card style={s.filterCard}>
@@ -77,24 +80,26 @@ export default function StarDelMese() {
 
 function cap(v: string) { return v.charAt(0).toUpperCase() + v.slice(1); }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg },
-  filterCard: { marginBottom: Spacing.xl },
-  filterLabel: { color: Colors.slate, fontSize: Font.small, fontWeight: '800', marginBottom: Spacing.sm },
-  heroWrap: { alignItems: 'center', marginBottom: Spacing.xl },
-  medalTop: { fontSize: 28 },
-  heroAvatar: { width: 84, height: 84, borderRadius: 24, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  heroAvatarText: { color: Colors.navyDeep, fontSize: 34, fontWeight: '900' },
-  heroName: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginTop: Spacing.md },
-  heroScore: { color: Colors.gold, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
-  heroFascia: { color: Colors.slate, fontSize: Font.small, fontWeight: '700' },
-  pedestal: { width: '65%', height: 120, backgroundColor: Colors.gold + '18', borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderWidth: 1, borderColor: Colors.gold + '44', alignItems: 'center', justifyContent: 'flex-start', paddingTop: Spacing.md, marginTop: Spacing.md },
-  pedestalNum: { color: Colors.gold + '99', fontSize: 40, fontWeight: '900' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
-  rowPos: { color: Colors.slate, fontWeight: '900', fontSize: Font.body, width: 22, textAlign: 'center' },
-  rowAvatar: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.navyLine, alignItems: 'center', justifyContent: 'center' },
-  rowAvatarText: { color: Colors.white, fontWeight: '800' },
-  rowName: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.body },
-  rowScore: { color: Colors.gold, fontWeight: '900', fontSize: Font.h3 },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: { padding: Spacing.lg },
+    filterCard: { marginBottom: Spacing.xl },
+    filterLabel: { color: colors.slate, fontSize: Font.small, fontWeight: '800', marginBottom: Spacing.sm },
+    heroWrap: { alignItems: 'center', marginBottom: Spacing.xl },
+    medalTop: { fontSize: 28 },
+    heroAvatar: { width: 84, height: 84, borderRadius: 24, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+    heroAvatarText: { color: colors.navyDeep, fontSize: 34, fontWeight: '900' },
+    heroName: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginTop: Spacing.md },
+    heroScore: { color: colors.gold, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
+    heroFascia: { color: colors.slate, fontSize: Font.small, fontWeight: '700' },
+    pedestal: { width: '65%', height: 120, backgroundColor: colors.gold + '18', borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, borderWidth: 1, borderColor: colors.gold + '44', alignItems: 'center', justifyContent: 'flex-start', paddingTop: Spacing.md, marginTop: Spacing.md },
+    pedestalNum: { color: colors.gold + '99', fontSize: 40, fontWeight: '900' },
+    row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
+    rowPos: { color: colors.slate, fontWeight: '900', fontSize: Font.body, width: 22, textAlign: 'center' },
+    rowAvatar: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.navyLine, alignItems: 'center', justifyContent: 'center' },
+    rowAvatarText: { color: colors.white, fontWeight: '800' },
+    rowName: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
+    rowScore: { color: colors.gold, fontWeight: '900', fontSize: Font.h3 },
+  });
+}

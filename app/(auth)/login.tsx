@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,12 +6,15 @@ import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { isMock } from '../../lib/api';
 import { Button, Card, Input, Muted } from '../../components/ui';
-import { Colors, Radius, Spacing, Font, CORNER_SMOOTHING } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, CORNER_SMOOTHING, AppColors } from '../../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function Login() {
   const { signIn, enterDemo } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
@@ -31,8 +34,8 @@ export default function Login() {
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <View style={s.logoWrap}>
             <View style={s.logoBadge}>
-              <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.card, cornerSmoothing: CORNER_SMOOTHING, fillColor: Colors.gold }} />
-              <Ionicons name="tennisball" size={34} color={Colors.navyDeep} />
+              <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.card, cornerSmoothing: CORNER_SMOOTHING, fillColor: colors.gold }} />
+              <Ionicons name="tennisball" size={34} color={colors.navyDeep} />
             </View>
             <Text style={s.brand}>PADEL STARS</Text>
             <Text style={s.brandGold}>LEAGUE</Text>
@@ -58,7 +61,7 @@ export default function Login() {
 
           {isMock() && (
             <Card style={s.demoBox}>
-              <Ionicons name="information-circle" size={18} color={Colors.slateLight} />
+              <Ionicons name="information-circle" size={18} color={colors.slateLight} />
               <Text style={s.demoText}>Backend non ancora configurato. Puoi esplorare l'app in modalità demo.</Text>
             </Card>
           )}
@@ -80,17 +83,19 @@ function traduci(m: string): string {
   return m;
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.xl, flexGrow: 1, justifyContent: 'center' },
-  logoWrap: { alignItems: 'center', marginBottom: Spacing.xxl },
-  logoBadge: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md, overflow: 'hidden' },
-  brand: { color: Colors.navyDeep, fontSize: 26, fontWeight: '900', letterSpacing: 4 },
-  brandGold: { color: Colors.gold, fontSize: 20, fontWeight: '900', letterSpacing: 8 },
-  title: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800' },
-  err: { color: Colors.red, marginTop: Spacing.sm, fontSize: Font.small },
-  row: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
-  link: { color: Colors.gold, fontWeight: '700' },
-  demoBox: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: Spacing.xxl },
-  demoText: { color: Colors.slateLight, flex: 1, fontSize: Font.small },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: { padding: Spacing.xl, flexGrow: 1, justifyContent: 'center' },
+    logoWrap: { alignItems: 'center', marginBottom: Spacing.xxl },
+    logoBadge: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md, overflow: 'hidden' },
+    brand: { color: colors.navyDeep, fontSize: 26, fontWeight: '900', letterSpacing: 4 },
+    brandGold: { color: colors.gold, fontSize: 20, fontWeight: '900', letterSpacing: 8 },
+    title: { color: colors.navyDeep, fontSize: Font.h1, fontWeight: '800' },
+    err: { color: colors.red, marginTop: Spacing.sm, fontSize: Font.small },
+    row: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
+    link: { color: colors.gold, fontWeight: '700' },
+    demoBox: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: Spacing.xxl },
+    demoText: { color: colors.slateLight, flex: 1, fontSize: Font.small },
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -7,11 +7,14 @@ import { useAuth } from '../../lib/auth';
 import { getCircuito, getClassificaNazionale, getStars } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, IconBadge, Muted } from '../../components/ui';
-import { Colors, Radius, Spacing, Font } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { CircuitoNazionale, RigaClassificaNazionale, StarsProfilo } from '../../types/models';
 
 export default function Stars() {
   const { me } = useAuth();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [circ, setCirc] = useState<CircuitoNazionale | null>(null);
   const [classifica, setClassifica] = useState<RigaClassificaNazionale[]>([]);
   const [stars, setStars] = useState<StarsProfilo | null>(null);
@@ -30,10 +33,10 @@ export default function Stars() {
     <SafeAreaView style={s.safe} edges={['top']}>
       <AppHeader />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.gold} />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}>
 
         <View style={s.brandRow}>
-          <Ionicons name="star" size={16} color={Colors.gold} />
+          <Ionicons name="star" size={16} color={colors.gold} />
           <Text style={s.brandText}>Stars League</Text>
         </View>
         <Text style={s.title}>Stars Circuit</Text>
@@ -79,7 +82,7 @@ export default function Stars() {
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={s.punti}>{r.punti.toLocaleString('it-IT')}</Text>
-                <Text style={[s.trend, { color: r.trend > 0 ? Colors.green : r.trend < 0 ? Colors.red : Colors.slate }]}>
+                <Text style={[s.trend, { color: r.trend > 0 ? colors.green : r.trend < 0 ? colors.red : colors.slate }]}>
                   {r.trend > 0 ? `+${r.trend}` : r.trend < 0 ? r.trend : '—'}
                 </Text>
               </View>
@@ -93,42 +96,46 @@ export default function Stars() {
 }
 
 function StatCard({ icon, value, label, trend }: { icon: any; value: string; label: string; trend?: boolean }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Card style={s.statCard}>
-      <Ionicons name={icon} size={20} color={trend ? Colors.green : Colors.gold} />
+      <Ionicons name={icon} size={20} color={trend ? colors.green : colors.gold} />
       <Text style={s.statValue}>{value}</Text>
       <Text style={s.statLabel}>{label}</Text>
     </Card>
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  brandText: { color: Colors.slate, fontSize: Font.small, fontWeight: '700' },
-  title: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
-  seasonCard: {},
-  seasonLabel: { color: Colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 1 },
-  seasonHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  seasonName: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '900' },
-  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.lg, marginBottom: 6 },
-  progressPct: { color: Colors.navyDeep, fontWeight: '800' },
-  progressBg: { height: 8, borderRadius: 4, backgroundColor: Colors.bg, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: Colors.gold, borderRadius: 4 },
-  stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
-  statCard: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
-  statLabel: { color: Colors.slate, fontSize: Font.small },
-  sectionTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800', marginTop: Spacing.xl, marginBottom: Spacing.md },
-  listCard: {},
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.navyLine + '22' },
-  posWrap: { width: 28, alignItems: 'center' },
-  medal: { fontSize: 20 },
-  posNum: { color: Colors.slate, fontWeight: '800', fontSize: Font.body },
-  nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-  centro: { color: Colors.slate, fontSize: Font.small },
-  punti: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '900' },
-  trend: { fontSize: Font.small, fontWeight: '700' },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: { padding: Spacing.lg },
+    brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    brandText: { color: colors.slate, fontSize: Font.small, fontWeight: '700' },
+    title: { color: colors.navyDeep, fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
+    seasonCard: {},
+    seasonLabel: { color: colors.gold, fontSize: Font.small, fontWeight: '800', letterSpacing: 1 },
+    seasonHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+    seasonName: { color: colors.navyDeep, fontSize: Font.h1, fontWeight: '900' },
+    progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.lg, marginBottom: 6 },
+    progressPct: { color: colors.navyDeep, fontWeight: '800' },
+    progressBg: { height: 8, borderRadius: 4, backgroundColor: colors.bg, overflow: 'hidden' },
+    progressFill: { height: '100%', backgroundColor: colors.gold, borderRadius: 4 },
+    stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
+    statCard: { flex: 1, alignItems: 'center', gap: 4 },
+    statValue: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
+    statLabel: { color: colors.slate, fontSize: Font.small },
+    sectionTitle: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800', marginTop: Spacing.xl, marginBottom: Spacing.md },
+    listCard: {},
+    row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md },
+    rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.navyLine + '22' },
+    posWrap: { width: 28, alignItems: 'center' },
+    medal: { fontSize: 20 },
+    posNum: { color: colors.slate, fontWeight: '800', fontSize: Font.body },
+    nome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    centro: { color: colors.slate, fontSize: Font.small },
+    punti: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '900' },
+    trend: { fontSize: Font.small, fontWeight: '700' },
+  });
+}

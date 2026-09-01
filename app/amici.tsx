@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,12 +7,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getAmici, cercaGiocatori, inviaRichiestaAmicizia, accettaAmicizia } from '../lib/api';
 import { Card, H2, Muted, Avatar, Button, Chip, IconButton, Input } from '../components/ui';
-import { Colors, Spacing, Font } from '../constants/theme';
+import { useTheme } from '../lib/theme';
+import { Spacing, Font, AppColors } from '../constants/theme';
 import type { Amicizia, Giocatore } from '../types/models';
 
 export default function Amici() {
   const { me, demoMode } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [tab, setTab] = useState<'amici' | 'cerca'>('amici');
   const [amici, setAmici] = useState<Amicizia[]>([]);
   const [q, setQ] = useState('');
@@ -83,7 +86,7 @@ export default function Amici() {
                       <Text style={s.nome}>{a.amico?.nome} {a.amico?.cognome}</Text>
                       <Muted>{a.amico?.profilo?.nickname ?? 'Padel'}</Muted>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color={Colors.slate} />
+                    <Ionicons name="chevron-forward" size={20} color={colors.slate} />
                   </Card>
                 </Pressable>
               ))
@@ -113,13 +116,15 @@ export default function Amici() {
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
-  tabs: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
-  scroll: { padding: Spacing.lg, paddingTop: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
-  rowInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
-  nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
+    title: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
+    tabs: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, marginBottom: Spacing.md },
+    scroll: { padding: Spacing.lg, paddingTop: 0 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
+    rowInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
+    nome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+  });
+}

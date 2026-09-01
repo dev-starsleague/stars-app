@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getCentri, getProdottiShop, getStarsCoinPerCentro, centriPreferiti, toggleCentroPreferito } from '../lib/api';
 import { Card, Chip, IconBadge, IconButton, Muted } from '../components/ui';
-import { Colors, Radius, Spacing, Font } from '../constants/theme';
+import { useTheme } from '../lib/theme';
+import { Radius, Spacing, Font, AppColors } from '../constants/theme';
 import type { Centro, ShopProdotto } from '../types/models';
 
 // Il backend è condiviso da centinaia di centri: lo Shop aggrega i prodotti
@@ -16,6 +17,8 @@ import type { Centro, ShopProdotto } from '../types/models';
 export default function StarsCoin() {
   const { me } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
 
   const [saldi, setSaldi] = useState<{ centro: Centro; saldo: number }[]>([]);
   const [centri, setCentri] = useState<Centro[]>([]);
@@ -84,7 +87,7 @@ export default function StarsCoin() {
           <>
             <Text style={s.sectionTitle}>Il tuo saldo</Text>
             <Card style={s.saldoCard}>
-              <Ionicons name="star" size={22} color={Colors.gold} />
+              <Ionicons name="star" size={22} color={colors.gold} />
               <Text style={s.saldoTotale}>{totale} SC</Text>
             </Card>
             {saldi.length === 0 && <Muted style={{ marginBottom: Spacing.lg }}>Nessun saldo accumulato ancora.</Muted>}
@@ -117,7 +120,7 @@ export default function StarsCoin() {
               </ScrollView>
             )}
 
-            {centri.length === 0 && <ActivityIndicator color={Colors.gold} style={{ marginTop: Spacing.xl }} />}
+            {centri.length === 0 && <ActivityIndicator color={colors.gold} style={{ marginTop: Spacing.xl }} />}
             {centri.length > 0 && centriFiltrati.length === 0 && (
               <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun centro corrisponde ai filtri.</Muted>
             )}
@@ -130,9 +133,9 @@ export default function StarsCoin() {
                     {(c.citta || c.provincia) ? <Muted>{[c.citta, c.provincia].filter(Boolean).join(' · ')}</Muted> : null}
                   </View>
                   <Pressable hitSlop={8} onPress={() => onTogglePreferito(c)}>
-                    <Ionicons name={preferiti.has(c.id) ? 'star' : 'star-outline'} size={20} color={preferiti.has(c.id) ? Colors.gold : Colors.slate} />
+                    <Ionicons name={preferiti.has(c.id) ? 'star' : 'star-outline'} size={20} color={preferiti.has(c.id) ? colors.gold : colors.slate} />
                   </Pressable>
-                  <Ionicons name="chevron-forward" size={20} color={Colors.slate} />
+                  <Ionicons name="chevron-forward" size={20} color={colors.slate} />
                 </Card>
               </Pressable>
             ))}
@@ -141,18 +144,18 @@ export default function StarsCoin() {
 
         {centroShop && (
           <>
-            {prodotti === null && <ActivityIndicator color={Colors.gold} style={{ marginTop: Spacing.xl }} />}
+            {prodotti === null && <ActivityIndicator color={colors.gold} style={{ marginTop: Spacing.xl }} />}
             {prodotti?.length === 0 && <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun prodotto disponibile in questo centro.</Muted>}
             <View style={s.grid}>
               {prodotti?.map((p) => (
                 <Card key={p.id} style={s.prodCard}>
                   <View style={s.prodImg}>
-                    <Ionicons name="pricetag-outline" size={28} color={Colors.gold} />
+                    <Ionicons name="pricetag-outline" size={28} color={colors.gold} />
                   </View>
                   {p.condizione === 'usato' && <View style={s.badgeUsato}><Text style={s.badgeUsatoText}>USATO</Text></View>}
                   <Text style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
                   <View style={s.prodPrezzoRow}>
-                    <Ionicons name="star" size={13} color={Colors.gold} />
+                    <Ionicons name="star" size={13} color={colors.gold} />
                     <Text style={s.prodPrezzo}>{p.prezzo_coin} SC</Text>
                   </View>
                   {p.prezzo_euro != null && <Muted>oppure {p.prezzo_euro} €</Muted>}
@@ -167,27 +170,29 @@ export default function StarsCoin() {
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
-  scroll: { padding: Spacing.lg, paddingTop: 0 },
-  sectionTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.sm },
-  saldoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-  saldoTotale: { color: Colors.gold, fontSize: Font.h1, fontWeight: '900' },
-  saldoRiga: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.navyLine + '22' },
-  saldoCentro: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.body },
-  saldoValore: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body },
-  filtriRow: { flexDirection: 'row', marginBottom: Spacing.sm },
-  chipScroll: { marginBottom: Spacing.sm },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
-  nome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginTop: Spacing.md },
-  prodCard: { width: '47%' },
-  prodImg: { height: 70, borderRadius: Radius.md, backgroundColor: Colors.navyCard, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
-  badgeUsato: { position: 'absolute', top: Spacing.sm, left: Spacing.sm, backgroundColor: Colors.navyDeep, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  badgeUsatoText: { color: Colors.white, fontSize: 9, fontWeight: '800' },
-  prodNome: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.small, marginBottom: 4, minHeight: 32 },
-  prodPrezzoRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  prodPrezzo: { color: Colors.navyDeep, fontWeight: '900', fontSize: Font.body },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
+    title: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
+    scroll: { padding: Spacing.lg, paddingTop: 0 },
+    sectionTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.sm },
+    saldoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+    saldoTotale: { color: colors.gold, fontSize: Font.h1, fontWeight: '900' },
+    saldoRiga: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.navyLine + '22' },
+    saldoCentro: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
+    saldoValore: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
+    filtriRow: { flexDirection: 'row', marginBottom: Spacing.sm },
+    chipScroll: { marginBottom: Spacing.sm },
+    row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
+    nome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginTop: Spacing.md },
+    prodCard: { width: '47%' },
+    prodImg: { height: 70, borderRadius: Radius.md, backgroundColor: colors.navyCard, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+    badgeUsato: { position: 'absolute', top: Spacing.sm, left: Spacing.sm, backgroundColor: colors.navy, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+    badgeUsatoText: { color: colors.white, fontSize: 9, fontWeight: '800' },
+    prodNome: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.small, marginBottom: 4, minHeight: 32 },
+    prodPrezzoRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    prodPrezzo: { color: colors.navyDeep, fontWeight: '900', fontSize: Font.body },
+  });
+}

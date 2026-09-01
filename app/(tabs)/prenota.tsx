@@ -7,15 +7,22 @@ import { useAuth } from '../../lib/auth';
 import { getCampi, getPrenotazioniGiorno, creaPrenotazione } from '../../lib/api';
 import { CENTRO_ID } from '../../lib/mockData';
 import { Card, H1, H2, Muted, Button, Pill } from '../../components/ui';
-import { Colors, Radius, Spacing, Font, Glass } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { Campo, Prenotazione, Tariffa } from '../../types/models';
 
 const GIORNI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const DURATA = 90; // minuti
 const APERTURA = 8, CHIUSURA = 23;
 
+// Barra di conferma in fondo: stessa superficie scura intenzionale della
+// navbar/sidebar (§ "one dark surface"), non segue il toggle chiaro/scuro.
+const GLASS_BLUR_STRONG = 34;
+
 export default function Prenota() {
   const { me, demoMode } = useAuth();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [campi, setCampi] = useState<Campo[]>([]);
   const [campoSel, setCampoSel] = useState<Campo | null>(null);
   const [giorniOffset, setGiorniOffset] = useState(0);
@@ -95,7 +102,7 @@ export default function Prenota() {
             return (
               <Pressable key={c.id} onPress={() => setCampoSel(c)}>
                 <Card style={[s.campoCard, active && s.campoCardActive]}>
-                  <View style={s.campoIcon}><Ionicons name="tennisball" size={20} color={active ? Colors.navyDeep : Colors.gold} /></View>
+                  <View style={s.campoIcon}><Ionicons name="tennisball" size={20} color={active ? colors.navyDeep : colors.gold} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.campoNome}>{c.nome}</Text>
                     <Muted>{c.sport} · {c.tipo}</Muted>
@@ -129,7 +136,7 @@ export default function Prenota() {
 
       {slotSel && (
         <View style={s.bar}>
-          <BlurView intensity={Glass.blurStrong} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <BlurView intensity={GLASS_BLUR_STRONG} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View style={[StyleSheet.absoluteFillObject, s.barTint]} />
           <View style={{ flex: 1 }}>
             <Text style={s.barTitle}>{campoSel?.nome} · {slotSel}–{addMin(slotSel, DURATA)}</Text>
@@ -159,27 +166,29 @@ function addMin(t: string, min: number) {
   const tot = toMin(t) + min; return `${String(Math.floor(tot / 60)).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`;
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg },
-  dayPill: { width: 52, height: 64, borderRadius: Radius.md, backgroundColor: Colors.navyCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  dayPillActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  dayPillTop: { color: Colors.slate, fontSize: Font.tiny, fontWeight: '700', textTransform: 'uppercase' },
-  dayPillNum: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
-  dayPillTextActive: { color: Colors.navyDeep },
-  campoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md },
-  campoCardActive: { borderColor: Colors.gold, backgroundColor: Colors.navy },
-  campoIcon: { width: 40, height: 40, borderRadius: Radius.sm, backgroundColor: Colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
-  campoNome: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-  slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  slot: { width: '31%', paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.navyCard, alignItems: 'center', borderWidth: 1, borderColor: Colors.navyLine + '55' },
-  slotOcc: { backgroundColor: Colors.navyDeep + '80', borderColor: 'transparent', opacity: 0.6 },
-  slotSel: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  slotText: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
-  slotPrezzo: { color: Colors.slate, fontSize: Font.tiny, marginTop: 2 },
-  slotTextOcc: { color: Colors.white, fontSize: Font.tiny },
-  slotTextSel: { color: Colors.navyDeep },
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' },
-  barTint: { backgroundColor: 'rgba(30, 49, 74, 0.82)' },
-  barTitle: { color: Colors.white, fontWeight: '700', fontSize: Font.body },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: { padding: Spacing.lg },
+    dayPill: { width: 52, height: 64, borderRadius: Radius.md, backgroundColor: colors.navyCard, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.navyLine + '55' },
+    dayPillActive: { backgroundColor: colors.gold, borderColor: colors.gold },
+    dayPillTop: { color: colors.slate, fontSize: Font.tiny, fontWeight: '700', textTransform: 'uppercase' },
+    dayPillNum: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
+    dayPillTextActive: { color: colors.navyDeep },
+    campoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md },
+    campoCardActive: { borderColor: colors.gold, backgroundColor: colors.navy },
+    campoIcon: { width: 40, height: 40, borderRadius: Radius.sm, backgroundColor: colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
+    campoNome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    slot: { width: '31%', paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: colors.navyCard, alignItems: 'center', borderWidth: 1, borderColor: colors.navyLine + '55' },
+    slotOcc: { backgroundColor: colors.navy + '80', borderColor: 'transparent', opacity: 0.6 },
+    slotSel: { backgroundColor: colors.gold, borderColor: colors.gold },
+    slotText: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    slotPrezzo: { color: colors.slate, fontSize: Font.tiny, marginTop: 2 },
+    slotTextOcc: { color: colors.white, fontSize: Font.tiny },
+    slotTextSel: { color: colors.navyDeep },
+    bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' },
+    barTint: { backgroundColor: 'rgba(30, 49, 74, 0.82)' },
+    barTitle: { color: colors.white, fontWeight: '700', fontSize: Font.body },
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -6,13 +6,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getRanking, inviaRichiestaAmicizia } from '../../lib/api';
 import { Card, H2, Muted, Avatar, Button, Divider, IconButton, Pill } from '../../components/ui';
-import { Colors, Spacing, Font } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
+import { Spacing, Font, AppColors } from '../../constants/theme';
 import type { Giocatore } from '../../types/models';
 
 export default function GiocatoreProfilo() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me, demoMode } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [g, setG] = useState<Giocatore | null>(null);
   const [rank, setRank] = useState<number | null>(null);
 
@@ -71,20 +74,24 @@ export default function GiocatoreProfilo() {
 }
 
 function Row({ label, value }: { label: string; value: string }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   return <View style={s.row}><Muted>{label}</Muted><Text style={s.rowValue}>{value}</Text></View>;
 }
 function cap(v?: string | null) { return v ? v.charAt(0).toUpperCase() + v.slice(1) : '—'; }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
-  scroll: { padding: Spacing.lg, paddingTop: 0 },
-  header: { alignItems: 'center', gap: 6, marginTop: Spacing.md },
-  nome: { color: Colors.navyDeep, fontSize: Font.h1, fontWeight: '800', marginTop: Spacing.sm },
-  stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
-  stat: { flex: 1, alignItems: 'center' },
-  statValue: { color: Colors.gold, fontSize: Font.h2, fontWeight: '900' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  rowValue: { color: Colors.navyDeep, fontWeight: '600', fontSize: Font.body },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
+    title: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
+    scroll: { padding: Spacing.lg, paddingTop: 0 },
+    header: { alignItems: 'center', gap: 6, marginTop: Spacing.md },
+    nome: { color: colors.navyDeep, fontSize: Font.h1, fontWeight: '800', marginTop: Spacing.sm },
+    stats: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
+    stat: { flex: 1, alignItems: 'center' },
+    statValue: { color: colors.gold, fontSize: Font.h2, fontWeight: '900' },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    rowValue: { color: colors.navyDeep, fontWeight: '600', fontSize: Font.body },
+  });
+}

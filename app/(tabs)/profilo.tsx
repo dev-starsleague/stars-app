@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
+import { useTheme } from '../../lib/theme';
 import {
   getCentro, getPartiteGiocatore, getRankingAttuale, getStoricoRanking, getTessera,
   caricaFotoProfilo, updateProfilo, haVinto,
@@ -16,7 +17,7 @@ import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented } from '../../components/ui';
 import { RankingChart } from '../../components/RankingChart';
 import { BADGE_CATALOGO } from '../../lib/stars';
-import { Colors, Radius, Spacing, Font, Glass } from '../../constants/theme';
+import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
 import type {
   Centro, EventoStorico, ManoDominante, Posizione, Prenotazione, Tessera,
 } from '../../types/models';
@@ -43,6 +44,8 @@ function manoLabel(m?: ManoDominante | null): string {
 export default function Profilo() {
   const { me, signOut, refreshMe } = useAuth();
   const router = useRouter();
+  const { colors, glass, scheme } = useTheme();
+  const s = useMemo(() => makeStyles(colors, glass), [colors, glass]);
   const [tab, setTab] = useState<TabP>('ranking');
 
   const [centro, setCentro] = useState<Centro | null>(null);
@@ -143,7 +146,7 @@ export default function Profilo() {
                   : <Text style={s.avatarBigText}>{(me?.nome?.[0] ?? 'P').toUpperCase()}</Text>}
               </View>
               <Pressable style={s.camBtn} onPress={scegliFoto} disabled={caricandoFoto}>
-                {caricandoFoto ? <ActivityIndicator size="small" color={Colors.white} /> : <Ionicons name="camera" size={12} color={Colors.white} />}
+                {caricandoFoto ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="camera" size={12} color={colors.white} />}
               </Pressable>
             </View>
             <View style={{ flex: 1 }}>
@@ -168,11 +171,11 @@ export default function Profilo() {
         {/* Sport da visualizzare: sotto le info del giocatore, sopra i tab —
             filtra Ranking e Partite qui sotto. */}
         <Pressable style={s.sportBar} onPress={() => setSportModaleAperto(true)}>
-          <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
-          <Ionicons name="tennisball-outline" size={16} color={Colors.navyDeep} />
+          <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
+          <Ionicons name="tennisball-outline" size={16} color={colors.navyDeep} />
           <Text style={s.sportBarText}>{sport}</Text>
-          <Ionicons name="chevron-down" size={14} color={Colors.slate} />
+          <Ionicons name="chevron-down" size={14} color={colors.slate} />
         </Pressable>
 
         {/* Tab interne */}
@@ -192,7 +195,7 @@ export default function Profilo() {
           <Card style={s.panel}>
             <Text style={s.panelTitle}>Il tuo ranking — {sport}</Text>
             {caricandoRanking ? (
-              <ActivityIndicator color={Colors.gold} style={{ marginVertical: Spacing.xl }} />
+              <ActivityIndicator color={colors.gold} style={{ marginVertical: Spacing.xl }} />
             ) : rankingAttuale ? (
               <>
                 <View style={s.rankRow}>
@@ -215,7 +218,7 @@ export default function Profilo() {
                   Il tuo ranking si aggiorna automaticamente dopo ogni partita competitiva. Prima però dobbiamo valutare il tuo livello di gioco.
                 </Muted>
                 <Pressable style={s.scopriBtn} onPress={() => router.push({ pathname: '/richiedi-valutazione', params: { sport } })}>
-                  <Ionicons name="trending-up" size={16} color={Colors.navyDeep} />
+                  <Ionicons name="trending-up" size={16} color={colors.navyDeep} />
                   <Text style={s.scopriText}>Scopri il tuo ranking</Text>
                 </Pressable>
               </Card>
@@ -226,9 +229,9 @@ export default function Profilo() {
         {tab === 'partite' && (
           <Card style={s.panel}>
             <View style={s.meseNav}>
-              <IconButton icon="chevron-back" variant="glass" size={32} color={Colors.navyDeep} onPress={() => cambiaMeseNav(-1)} />
+              <IconButton icon="chevron-back" variant="glass" size={32} color={colors.navyDeep} onPress={() => cambiaMeseNav(-1)} />
               <Text style={s.meseNavTitolo}>{cap(nomeMeseNav)}</Text>
-              <IconButton icon="chevron-forward" variant="glass" size={32} color={Colors.navyDeep} onPress={() => cambiaMeseNav(1)} />
+              <IconButton icon="chevron-forward" variant="glass" size={32} color={colors.navyDeep} onPress={() => cambiaMeseNav(1)} />
             </View>
 
             <View style={[s.filtriRiga, { flexWrap: 'wrap' }]}>
@@ -250,8 +253,8 @@ export default function Profilo() {
                     <Muted>{p.data} · {p.inizio?.slice(0, 5)}</Muted>
                   </View>
                   {vinta !== null && (
-                    <View style={[s.esitoPill, { backgroundColor: (vinta ? Colors.green : Colors.red) + '22' }]}>
-                      <Text style={[s.esitoText, { color: vinta ? Colors.green : Colors.red }]}>{vinta ? 'Vittoria' : 'Sconfitta'}</Text>
+                    <View style={[s.esitoPill, { backgroundColor: (vinta ? colors.green : colors.red) + '22' }]}>
+                      <Text style={[s.esitoText, { color: vinta ? colors.green : colors.red }]}>{vinta ? 'Vittoria' : 'Sconfitta'}</Text>
                     </View>
                   )}
                 </Card>
@@ -280,13 +283,13 @@ export default function Profilo() {
             <Text style={s.panelTitle}>Tessera PSL</Text>
             <Card style={s.tesseraBox}>
               <View style={s.tesseraHead}>
-                <Ionicons name="card" size={22} color={Colors.gold} />
+                <Ionicons name="card" size={22} color={colors.gold} />
                 <Text style={s.tesseraStato}>{tessera?.stato === 'attiva' ? 'Attiva' : 'Da rinnovare'}</Text>
               </View>
               <Text style={s.tesseraNum}>{tessera?.numero ?? 'PSL-2026-0001'}</Text>
               <Muted>Scadenza: {tessera?.scadenza ?? '—'} · Quota €{tessera?.quota ?? 25}</Muted>
               <Pressable style={s.otpBtn}>
-                <Ionicons name="finger-print" size={16} color={Colors.navyDeep} />
+                <Ionicons name="finger-print" size={16} color={colors.navyDeep} />
                 <Text style={s.otpText}>Rinnova con firma OTP</Text>
               </Pressable>
             </Card>
@@ -296,16 +299,16 @@ export default function Profilo() {
         {/* Azioni finali */}
         <View style={s.footRow}>
           <Pressable style={s.footBtn} onPress={() => me && router.push(`/giocatore/${me.id}`)}>
-            <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
-            <Ionicons name="open-outline" size={16} color={Colors.navyDeep} />
+            <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
+            <Ionicons name="open-outline" size={16} color={colors.navyDeep} />
             <Text style={s.footText}>Profilo pubblico</Text>
           </Pressable>
           <Pressable style={s.footBtn} onPress={signOut}>
-            <BlurView intensity={Glass.blur} tint="light" style={StyleSheet.absoluteFillObject} />
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bg }]} />
-            <Ionicons name="log-out-outline" size={16} color={Colors.red} />
-            <Text style={[s.footText, { color: Colors.red }]}>Esci</Text>
+            <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
+            <Ionicons name="log-out-outline" size={16} color={colors.red} />
+            <Text style={[s.footText, { color: colors.red }]}>Esci</Text>
           </Pressable>
         </View>
 
@@ -316,12 +319,12 @@ export default function Profilo() {
       <Modal visible={sportModaleAperto} transparent animationType="fade" onRequestClose={() => setSportModaleAperto(false)}>
         <Pressable style={s.modaleSfondo} onPress={() => setSportModaleAperto(false)}>
           <View style={s.modaleBox}>
-            <BlurView intensity={Glass.blurStrong} tint="light" style={StyleSheet.absoluteFillObject} />
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Glass.bgStrong }]} />
+            <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
             <Text style={s.modaleTitolo}>Sport da visualizzare</Text>
             {(centro?.sport_attivi ?? ['Padel']).map((sp) => (
               <Pressable key={sp} style={s.modaleRiga} onPress={() => { setSport(sp); setSportModaleAperto(false); }}>
-                <Ionicons name={sp === sport ? 'radio-button-on' : 'radio-button-off'} size={20} color={sp === sport ? Colors.gold : Colors.slate} />
+                <Ionicons name={sp === sport ? 'radio-button-on' : 'radio-button-off'} size={20} color={sp === sport ? colors.gold : colors.slate} />
                 <Text style={s.modaleRigaText}>{sp}</Text>
               </Pressable>
             ))}
@@ -334,58 +337,60 @@ export default function Profilo() {
 
 function cap(v: string): string { return v.charAt(0).toUpperCase() + v.slice(1); }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg },
-  headCard: {},
-  headTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  avatarWrap: { width: 68, height: 68 },
-  avatarBig: { width: 68, height: 68, borderRadius: 20, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImg: { width: '100%', height: '100%' },
-  avatarBigText: { color: Colors.navyDeep, fontSize: 30, fontWeight: '900' },
-  camBtn: { position: 'absolute', bottom: -4, right: -4, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.navyDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.navyCard },
-  headName: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
-  headNick: { color: Colors.slate, fontSize: Font.body, fontStyle: 'italic' },
-  headStats: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  hStat: { flex: 1, backgroundColor: Glass.bgStrong, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
-  hStatValue: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3 },
-  sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: Glass.border, overflow: 'hidden' },
-  sportBarText: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.small },
-  panel: { marginTop: Spacing.md },
-  panelTitle: { color: Colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.md },
-  rankRow: { flexDirection: 'row', gap: Spacing.md },
-  rankBox: { flex: 1, backgroundColor: Glass.bgStrong, borderRadius: Radius.md, padding: Spacing.lg, alignItems: 'center' },
-  rankScore: { color: Colors.navyDeep, fontSize: 32, fontWeight: '900' },
-  rankBoxLabel: { color: Colors.slate, fontSize: Font.tiny, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
-  emptyBox: { alignItems: 'center', marginTop: Spacing.md },
-  emptyIcon: { fontSize: 34 },
-  emptyTitle: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
-  scopriBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.gold, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderRadius: Radius.pill, marginTop: Spacing.lg },
-  scopriText: { color: Colors.navyDeep, fontWeight: '800' },
-  meseNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
-  meseNavTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body },
-  filtriRiga: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
-  matchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
-  matchName: { color: Colors.navyDeep, fontWeight: '700' },
-  esitoPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill },
-  esitoText: { fontWeight: '800', fontSize: Font.tiny, textTransform: 'uppercase' },
-  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  badge: { width: '30%', alignItems: 'center', gap: 4 },
-  badgeLocked: { opacity: 0.45 },
-  badgeIcon: { fontSize: 26 },
-  badgeName: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.small, textAlign: 'center' },
-  tesseraBox: {},
-  tesseraHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  tesseraStato: { color: Colors.gold, fontWeight: '800', fontSize: Font.small },
-  tesseraNum: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.md, letterSpacing: 1 },
-  otpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.gold, paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.lg },
-  otpText: { color: Colors.navyDeep, fontWeight: '800' },
-  footRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
-  footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: Radius.md, borderWidth: 1, borderColor: Glass.border, paddingVertical: Spacing.lg, overflow: 'hidden' },
-  footText: { color: Colors.navyDeep, fontWeight: '800' },
-  modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
-  modaleBox: { width: '100%', maxWidth: 340, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: Glass.border },
-  modaleTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
-  modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
-  modaleRigaText: { color: Colors.navyDeep, fontSize: Font.body, fontWeight: '600' },
-});
+function makeStyles(colors: AppColors, glass: AppGlass) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    scroll: { padding: Spacing.lg },
+    headCard: {},
+    headTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    avatarWrap: { width: 68, height: 68 },
+    avatarBig: { width: 68, height: 68, borderRadius: 20, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+    avatarImg: { width: '100%', height: '100%' },
+    avatarBigText: { color: colors.navyDeep, fontSize: 30, fontWeight: '900' },
+    camBtn: { position: 'absolute', bottom: -4, right: -4, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.navyCard },
+    headName: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
+    headNick: { color: colors.slate, fontSize: Font.body, fontStyle: 'italic' },
+    headStats: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
+    hStat: { flex: 1, backgroundColor: glass.strongBg, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
+    hStatValue: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3 },
+    sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: glass.regularBorder, overflow: 'hidden' },
+    sportBarText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small },
+    panel: { marginTop: Spacing.md },
+    panelTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.md },
+    rankRow: { flexDirection: 'row', gap: Spacing.md },
+    rankBox: { flex: 1, backgroundColor: glass.strongBg, borderRadius: Radius.md, padding: Spacing.lg, alignItems: 'center' },
+    rankScore: { color: colors.navyDeep, fontSize: 32, fontWeight: '900' },
+    rankBoxLabel: { color: colors.slate, fontSize: Font.tiny, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
+    emptyBox: { alignItems: 'center', marginTop: Spacing.md },
+    emptyIcon: { fontSize: 34 },
+    emptyTitle: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.sm },
+    scopriBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.gold, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderRadius: Radius.pill, marginTop: Spacing.lg },
+    scopriText: { color: colors.navyDeep, fontWeight: '800' },
+    meseNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+    meseNavTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
+    filtriRiga: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+    matchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
+    matchName: { color: colors.navyDeep, fontWeight: '700' },
+    esitoPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill },
+    esitoText: { fontWeight: '800', fontSize: Font.tiny, textTransform: 'uppercase' },
+    badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+    badge: { width: '30%', alignItems: 'center', gap: 4 },
+    badgeLocked: { opacity: 0.45 },
+    badgeIcon: { fontSize: 26 },
+    badgeName: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.small, textAlign: 'center' },
+    tesseraBox: {},
+    tesseraHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    tesseraStato: { color: colors.gold, fontWeight: '800', fontSize: Font.small },
+    tesseraNum: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '900', marginTop: Spacing.md, letterSpacing: 1 },
+    otpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.gold, paddingVertical: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.lg },
+    otpText: { color: colors.navyDeep, fontWeight: '800' },
+    footRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
+    footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: Radius.md, borderWidth: 1, borderColor: glass.regularBorder, paddingVertical: Spacing.lg, overflow: 'hidden' },
+    footText: { color: colors.navyDeep, fontWeight: '800' },
+    modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+    modaleBox: { width: '100%', maxWidth: 340, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: glass.regularBorder },
+    modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
+    modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
+    modaleRigaText: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '600' },
+  });
+}

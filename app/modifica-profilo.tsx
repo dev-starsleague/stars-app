@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { updateProfilo } from '../lib/api';
 import { Button, Card, Chip, IconButton, Input, Muted } from '../components/ui';
-import { Colors, Spacing, Font } from '../constants/theme';
+import { useTheme } from '../lib/theme';
+import { Spacing, Font, AppColors } from '../constants/theme';
 import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../types/models';
 
 // Stessi campi del form "Modifica giocatore" del gestionale
@@ -18,6 +19,8 @@ const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis'];
 export default function ModificaProfilo() {
   const { me, refreshMe, demoMode } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
 
   // Anagrafica
   const [nome, setNome] = useState(me?.nome ?? '');
@@ -171,7 +174,7 @@ export default function ModificaProfilo() {
             return (
               <View key={gi} style={s.giornoBlocco}>
                 <Pressable style={s.giornoRiga} onPress={() => toggleGiorno(gi)}>
-                  <Ionicons name={attivo ? 'checkbox' : 'square-outline'} size={20} color={attivo ? Colors.gold : Colors.slate} />
+                  <Ionicons name={attivo ? 'checkbox' : 'square-outline'} size={20} color={attivo ? colors.gold : colors.slate} />
                   <Text style={s.giornoNome}>{gi}</Text>
                 </Pressable>
                 {attivo && (
@@ -182,12 +185,12 @@ export default function ModificaProfilo() {
                         <Text style={s.fasciaSep}>–</Text>
                         <Input style={s.orario} value={f.a} onChangeText={(v) => modificaFascia(gi, idx, 'a', v)} placeholder="20:00" />
                         <Pressable onPress={() => rimuoviFascia(gi, idx)} style={s.fasciaRimuovi}>
-                          <Ionicons name="close" size={16} color={Colors.red} />
+                          <Ionicons name="close" size={16} color={colors.red} />
                         </Pressable>
                       </View>
                     ))}
                     <Pressable onPress={() => aggiungiFascia(gi)} style={s.aggiungiFascia}>
-                      <Ionicons name="add" size={14} color={Colors.navyDeep} />
+                      <Ionicons name="add" size={14} color={colors.navyDeep} />
                       <Text style={s.aggiungiFasciaText}>fascia</Text>
                     </Pressable>
                   </View>
@@ -207,11 +210,13 @@ export default function ModificaProfilo() {
 function Sezione({ titolo, badge, aperta, onToggle, children }: {
   titolo: string; badge?: number; aperta: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Card style={s.sezione}>
       <Pressable style={s.sezioneHead} onPress={onToggle}>
         <Text style={s.sezioneTitolo}>{titolo}{badge ? ` · ${badge}` : ''}</Text>
-        <Ionicons name={aperta ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.slate} />
+        <Ionicons name={aperta ? 'chevron-up' : 'chevron-down'} size={18} color={colors.slate} />
       </Pressable>
       {aperta && <View style={s.sezioneBody}>{children}</View>}
     </Card>
@@ -228,25 +233,27 @@ function Field({ label, style, ...rest }: any) {
 }
 function cap(v: string) { return v.charAt(0).toUpperCase() + v.slice(1); }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
-  title: { color: Colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
-  scroll: { padding: Spacing.lg, paddingTop: 0, gap: Spacing.lg },
-  chips: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-  riga2: { flexDirection: 'row', gap: Spacing.md },
-  sezione: {},
-  sezioneHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg, margin: -Spacing.lg, marginBottom: 0 },
-  sezioneTitolo: { color: Colors.navyDeep, fontWeight: '800', fontSize: Font.body, textTransform: 'uppercase', letterSpacing: 0.3 },
-  sezioneBody: { paddingTop: Spacing.lg, gap: Spacing.lg },
-  giornoBlocco: { marginBottom: Spacing.sm },
-  giornoRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 },
-  giornoNome: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.body },
-  fasceBox: { marginLeft: 28, gap: Spacing.sm },
-  fasciaRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  orario: { width: 76, height: 38 },
-  fasciaSep: { color: Colors.slate },
-  fasciaRimuovi: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
-  aggiungiFascia: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
-  aggiungiFasciaText: { color: Colors.navyDeep, fontWeight: '700', fontSize: Font.small, textDecorationLine: 'underline' },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg },
+    title: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
+    scroll: { padding: Spacing.lg, paddingTop: 0, gap: Spacing.lg },
+    chips: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+    riga2: { flexDirection: 'row', gap: Spacing.md },
+    sezione: {},
+    sezioneHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg, margin: -Spacing.lg, marginBottom: 0 },
+    sezioneTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body, textTransform: 'uppercase', letterSpacing: 0.3 },
+    sezioneBody: { paddingTop: Spacing.lg, gap: Spacing.lg },
+    giornoBlocco: { marginBottom: Spacing.sm },
+    giornoRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 },
+    giornoNome: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
+    fasceBox: { marginLeft: 28, gap: Spacing.sm },
+    fasciaRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    orario: { width: 76, height: 38 },
+    fasciaSep: { color: colors.slate },
+    fasciaRimuovi: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+    aggiungiFascia: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
+    aggiungiFasciaText: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.small, textDecorationLine: 'underline' },
+  });
+}

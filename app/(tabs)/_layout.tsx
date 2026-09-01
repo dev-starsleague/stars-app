@@ -6,7 +6,8 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { SquircleView } from 'react-native-figma-squircle';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Radius, Spacing, CORNER_SMOOTHING, Glass } from '../../constants/theme';
+import { Radius, Spacing, CORNER_SMOOTHING } from '../../constants/theme';
+import { useTheme } from '../../lib/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 const ICON: Record<string, IconName> = { index: 'home-outline', classifiche: 'trophy-outline', eventi: 'flash-outline', stars: 'star-outline' };
@@ -42,6 +43,7 @@ const NAVBAR = {
 // dietro alla riga con i 5 slot, che invece non è mai clippata.
 function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const byName = (n: string) => state.routes.find((r) => r.name === n)!;
   const slots = [byName('index'), byName('classifiche'), null, byName('eventi'), byName('stars')];
 
@@ -49,7 +51,10 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     <View style={[styles.wrap, { bottom: Math.max(insets.bottom, 14) }]} pointerEvents="box-none">
       <View style={styles.pillWrap}>
         <View style={styles.pillClip} pointerEvents="none">
-          <BlurView intensity={Glass.blurStrong} tint="dark" style={StyleSheet.absoluteFillObject} />
+          {/* Pillola SEMPRE in vetro scuro, in entrambi i temi — stessa
+              superficie scura intenzionale della sidebar del gestionale,
+              non segue il toggle chiaro/scuro dell'app. */}
+          <BlurView intensity={34} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View style={[StyleSheet.absoluteFillObject, styles.pillTint]} />
         </View>
 
@@ -58,8 +63,15 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             if (!route) {
               return (
                 <View key="star" style={styles.item}>
-                  <View style={styles.fab}>
-                    <Ionicons name="star" color={Colors.navyDeep} size={26} />
+                  {/* Il bordo della stella segue il tema: la punta sporge
+                      sopra la pillola scura fissa, sul retro della pagina
+                      chiara/scura sottostante — deve staccarsi da quella,
+                      non dalla pillola. */}
+                  <View style={[styles.fab, { borderColor: colors.surface }]}>
+                    {/* Stella sempre navy scuro sul cerchio oro pieno: il
+                        contrasto navy-su-oro funziona identico in entrambi
+                        i temi, non deve seguire il toggle. */}
+                    <Ionicons name="star" color="#16253A" size={26} />
                   </View>
                 </View>
               );
@@ -78,11 +90,11 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 {isFocused && (
                   <SquircleView
                     style={StyleSheet.absoluteFillObject}
-                    squircleParams={{ cornerRadius: Radius.compact, cornerSmoothing: CORNER_SMOOTHING, fillColor: 'rgba(255,175,0,0.14)' }}
+                    squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: 'rgba(255,175,0,0.14)' }}
                   />
                 )}
-                <Ionicons name={isFocused ? ICON_ACTIVE[route.name] : ICON[route.name]} size={22} color={isFocused ? Colors.gold : NAVBAR.iconInactive} />
-                <Text style={[styles.label, { color: isFocused ? Colors.gold : NAVBAR.iconInactive }]}>{String(options.title ?? route.name)}</Text>
+                <Ionicons name={isFocused ? ICON_ACTIVE[route.name] : ICON[route.name]} size={22} color={isFocused ? '#FFAF00' : NAVBAR.iconInactive} />
+                <Text style={[styles.label, { color: isFocused ? '#FFAF00' : NAVBAR.iconInactive }]}>{String(options.title ?? route.name)}</Text>
               </Pressable>
             );
           })}
@@ -119,7 +131,7 @@ const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: Spacing.lg, right: Spacing.lg, alignItems: 'center' },
   // Nessun overflow:hidden qui: la stella dello slot centrale deve poter
   // sporgere sopra il bordo superiore senza essere tagliata.
-  pillWrap: { width: '100%', height: PILL_HEIGHT, borderRadius: Radius.card, boxShadow: Glass.shadow } as any,
+  pillWrap: { width: '100%', height: PILL_HEIGHT, borderRadius: Radius.card, boxShadow: '0 10px 28px rgba(20,30,48,0.10), 0 2px 8px rgba(20,30,48,0.06)' } as any,
   // Livello di sfondo separato (blur/tinta/bordo), assoluto e clippato agli
   // angoli arrotondati — l'unico nodo con overflow:hidden, dietro alla riga.
   pillClip: {
@@ -136,9 +148,9 @@ const styles = StyleSheet.create({
   // calcolato — è del tutto interno al flusso della riga.
   fab: {
     width: FAB_SIZE, height: FAB_SIZE, borderRadius: 18, marginTop: 0,
-    backgroundColor: Colors.gold,
+    backgroundColor: '#FFAF00',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 4, borderColor: Colors.surface,
+    borderWidth: 4,
     boxShadow: '0 6px 18px rgba(255,175,0,0.45)',
   } as any,
   label: { fontSize: 9.5, fontWeight: '700', textAlign: 'center' },

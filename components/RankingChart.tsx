@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Svg, { Line, Path, Circle, Text as SvgText } from 'react-native-svg';
-import { Colors, Spacing, Radius } from '../constants/theme';
+import { Spacing, Radius, AppColors } from '../constants/theme';
+import { useTheme } from '../lib/theme';
 import type { EventoStorico } from '../types/models';
 
 // Porting diretto di stars-system/src/lib/components/GraficoRanking.svelte
@@ -66,6 +67,8 @@ function costruisciGrafico(storico: EventoStorico[], interattivo: boolean) {
 }
 
 export function RankingChart({ eventi, titolo = 'Andamento ranking' }: { eventi: EventoStorico[]; titolo?: string }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const [vistaCompleta, setVistaCompleta] = useState(false);
   const [selezionato, setSelezionato] = useState<number | null>(null);
 
@@ -86,7 +89,7 @@ export function RankingChart({ eventi, titolo = 'Andamento ranking' }: { eventi:
     <View style={s.wrap}>
       <View style={s.titoloRiga}>
         <Text style={s.titolo}>{titolo}</Text>
-        <Text style={[s.delta, { color: grafico.delta >= 0 ? Colors.green : Colors.red }]}>
+        <Text style={[s.delta, { color: grafico.delta >= 0 ? colors.green : colors.red }]}>
           {grafico.delta >= 0 ? '▲' : '▼'} {grafico.delta >= 0 ? '+' : ''}{grafico.delta.toFixed(2)}
         </Text>
       </View>
@@ -95,23 +98,23 @@ export function RankingChart({ eventi, titolo = 'Andamento ranking' }: { eventi:
       <Svg viewBox={`0 0 ${W} ${H}`} style={s.svg}>
         {grafico.righeGriglia.map((riga, i) => (
           <React.Fragment key={i}>
-            <Line x1={PAD_L} y1={riga.y} x2={W - 6} y2={riga.y} stroke={Colors.navyLine} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
-            <SvgText x={2} y={riga.y + 3} fontSize={8} fill={Colors.slate}>{riga.v.toFixed(2)}</SvgText>
+            <Line x1={PAD_L} y1={riga.y} x2={W - 6} y2={riga.y} stroke={colors.navyLine} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
+            <SvgText x={2} y={riga.y + 3} fontSize={8} fill={colors.slate}>{riga.v.toFixed(2)}</SvgText>
           </React.Fragment>
         ))}
-        <SvgText x={PAD_L} y={H - 6} fontSize={8} fill={Colors.slate}>{formatDataBrevissima(grafico.primaData)}</SvgText>
-        <SvgText x={W - 6} y={H - 6} fontSize={8} fill={Colors.slate} textAnchor="end">{formatDataBrevissima(grafico.ultimaData)}</SvgText>
+        <SvgText x={PAD_L} y={H - 6} fontSize={8} fill={colors.slate}>{formatDataBrevissima(grafico.primaData)}</SvgText>
+        <SvgText x={W - 6} y={H - 6} fontSize={8} fill={colors.slate} textAnchor="end">{formatDataBrevissima(grafico.ultimaData)}</SvgText>
 
-        <Path d={grafico.areaPath} fill={Colors.gold} fillOpacity={0.15} stroke="none" />
-        <Path d={grafico.path} fill="none" stroke={Colors.gold} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d={grafico.areaPath} fill={colors.gold} fillOpacity={0.15} stroke="none" />
+        <Path d={grafico.path} fill="none" stroke={colors.gold} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
 
         {!vistaCompleta && grafico.pts.map((p, i) => (
           <Circle
             key={i}
             cx={p.x} cy={p.y}
             r={selezionato === i ? 6.5 : i === grafico.pts.length - 1 ? 5 : 3.5}
-            fill={selezionato === i ? Colors.red : i === grafico.pts.length - 1 ? Colors.navyDeep : Colors.gold}
-            stroke={Colors.surface}
+            fill={selezionato === i ? colors.red : i === grafico.pts.length - 1 ? colors.navyDeep : colors.gold}
+            stroke={colors.surface}
             strokeWidth={1.5}
             onPress={() => setSelezionato((sel) => (sel === i ? null : i))}
           />
@@ -125,7 +128,7 @@ export function RankingChart({ eventi, titolo = 'Andamento ranking' }: { eventi:
           </Pressable>
           <Text style={s.dettaglioVal}>
             Ranking <Text style={{ fontWeight: '900' }}>{visibili[selezionato].post.toFixed(2)}</Text>{' '}
-            <Text style={{ color: visibili[selezionato].delta >= 0 ? Colors.green : Colors.red }}>
+            <Text style={{ color: visibili[selezionato].delta >= 0 ? colors.green : colors.red }}>
               ({visibili[selezionato].delta >= 0 ? '+' : ''}{visibili[selezionato].delta.toFixed(2)})
             </Text>
           </Text>
@@ -147,18 +150,20 @@ export function RankingChart({ eventi, titolo = 'Andamento ranking' }: { eventi:
   );
 }
 
-const s = StyleSheet.create({
-  wrap: { marginTop: 4 },
-  titoloRiga: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
-  titolo: { fontWeight: '700', fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.3, color: Colors.slate },
-  delta: { fontWeight: '800', fontSize: 13 },
-  sub: { fontSize: 11, color: Colors.slate, marginVertical: 4 },
-  svg: { width: '100%', height: H },
-  dettaglio: { marginTop: Spacing.sm, padding: 10, paddingRight: 28, borderRadius: Radius.compact, backgroundColor: Colors.navyCard },
-  dettaglioVal: { fontWeight: '700', fontSize: 12.5, color: Colors.navyDeep },
-  dettaglioMeta: { color: Colors.slate, marginTop: 2, fontSize: 12 },
-  dettaglioChiudi: { position: 'absolute', top: 6, right: 6, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  dettaglioChiudiText: { color: Colors.slate, fontWeight: '700' },
-  toggle: { marginTop: Spacing.sm, color: Colors.navy, fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
-  vuoto: { color: Colors.slate, fontSize: 13, marginTop: 6 },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    wrap: { marginTop: 4 },
+    titoloRiga: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+    titolo: { fontWeight: '700', fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.3, color: colors.slate },
+    delta: { fontWeight: '800', fontSize: 13 },
+    sub: { fontSize: 11, color: colors.slate, marginVertical: 4 },
+    svg: { width: '100%', height: H },
+    dettaglio: { marginTop: Spacing.sm, padding: 10, paddingRight: 28, borderRadius: Radius.compact, backgroundColor: colors.navyCard },
+    dettaglioVal: { fontWeight: '700', fontSize: 12.5, color: colors.navyDeep },
+    dettaglioMeta: { color: colors.slate, marginTop: 2, fontSize: 12 },
+    dettaglioChiudi: { position: 'absolute', top: 6, right: 6, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+    dettaglioChiudiText: { color: colors.slate, fontWeight: '700' },
+    toggle: { marginTop: Spacing.sm, color: colors.navy, fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
+    vuoto: { color: colors.slate, fontSize: 13, marginTop: 6 },
+  });
+}

@@ -4,11 +4,12 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
+import { ThemeProvider, useTheme } from '../lib/theme';
 import { PhoneFrame } from '../components/PhoneFrame';
-import { Colors } from '../constants/theme';
 
 function RootNav() {
   const { session, demoMode, loading } = useAuth();
+  const { colors, scheme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
   const authed = Boolean(session) || demoMode;
@@ -22,34 +23,38 @@ function RootNav() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: Colors.navy, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={Colors.gold} size="large" />
+      <View style={{ flex: 1, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.gold} size="large" />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.bg } }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="amici" options={{ presentation: 'card' }} />
-      <Stack.Screen name="modifica-profilo" options={{ presentation: 'card' }} />
-      <Stack.Screen name="giocatore/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="richiedi-valutazione" options={{ presentation: 'card' }} />
-      <Stack.Screen name="stars-coin" options={{ presentation: 'card' }} />
-    </Stack>
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="amici" options={{ presentation: 'card' }} />
+        <Stack.Screen name="modifica-profilo" options={{ presentation: 'card' }} />
+        <Stack.Screen name="giocatore/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="richiedi-valutazione" options={{ presentation: 'card' }} />
+        <Stack.Screen name="stars-coin" options={{ presentation: 'card' }} />
+      </Stack>
+    </>
   );
 }
 
 export default function Layout() {
   return (
     <SafeAreaProvider>
-      <PhoneFrame>
-        <AuthProvider>
-          <StatusBar style="light" />
-          <RootNav />
-        </AuthProvider>
-      </PhoneFrame>
+      <ThemeProvider>
+        <PhoneFrame>
+          <AuthProvider>
+            <RootNav />
+          </AuthProvider>
+        </PhoneFrame>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
