@@ -14,7 +14,7 @@ export interface AppColors {
   navy: string; navyDeep: string; navyCard: string; navyLine: string;
   gold: string; goldSoft: string;
   slate: string; slateLight: string; cloud: string; white: string;
-  green: string; red: string; amber: string;
+  green: string; red: string; amber: string; viola: string;
   bg: string; bgElevated: string; surface: string;
   // --- token semantici (§17/§24 direttiva) ---
   background: string; surfacePrimary: string; surfaceSecondary: string; surfaceElevated: string;
@@ -28,7 +28,7 @@ export const LightColors: AppColors = {
   navy: '#1E314A', navyDeep: '#16253A', navyCard: '#F0F3F7', navyLine: '#4A6080',
   gold: '#FFAF00', goldSoft: '#FFC94D',
   slate: '#66788D', slateLight: '#56687C', cloud: '#33404F', white: '#FFFFFF',
-  green: '#22C55E', red: '#EF4444', amber: '#F59E0B',
+  green: '#22C55E', red: '#EF4444', amber: '#F59E0B', viola: '#8B5CF6',
   bg: '#EEF1F5', bgElevated: '#FFFFFF', surface: '#FFFFFF',
   background: '#EEF1F5', surfacePrimary: '#FFFFFF', surfaceSecondary: '#F5F7FA', surfaceElevated: 'rgba(255,255,255,0.86)',
   labelPrimary: '#16253A', labelSecondary: '#66788D', labelTertiary: 'rgba(22,37,58,0.5)', separator: 'rgba(74,96,128,0.22)',
@@ -42,7 +42,7 @@ export const DarkColors: AppColors = {
   navy: '#0E1420', navyDeep: '#EEF1F5', navyCard: '#1A2333', navyLine: 'rgba(191,201,213,0.24)',
   gold: '#FFAF00', goldSoft: '#FFC94D',
   slate: '#97A5B8', slateLight: '#AEBBCB', cloud: '#D7DEE8', white: '#FFFFFF',
-  green: '#22C55E', red: '#EF4444', amber: '#F59E0B',
+  green: '#22C55E', red: '#EF4444', amber: '#F59E0B', viola: '#8B5CF6',
   bg: '#0E1420', bgElevated: '#161D2B', surface: '#161D2B',
   background: '#0E1420', surfacePrimary: '#161D2B', surfaceSecondary: '#101623', surfaceElevated: 'rgba(22,29,43,0.86)',
   labelPrimary: '#EEF1F5', labelSecondary: '#97A5B8', labelTertiary: 'rgba(238,241,245,0.5)', separator: 'rgba(255,255,255,0.12)',

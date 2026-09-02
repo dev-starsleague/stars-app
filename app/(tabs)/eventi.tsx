@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getEventi, iscrivitiEvento } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
 import { Button, Card, Chip, IconBadge, Input, Muted, Segmented } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
@@ -32,8 +33,8 @@ export default function Eventi() {
   const iscriviti = async (e: EventoCustom) => {
     if (!me) return;
     const res = await iscrivitiEvento(e.id, me.id);
-    if (res.ok) { setIscritti((p) => ({ ...p, [e.id]: true })); Alert.alert('Iscrizione registrata', `Sei iscritto a "${e.nome}".`); }
-    else Alert.alert('Errore', res.error ?? 'Iscrizione non riuscita.');
+    if (res.ok) { setIscritti((p) => ({ ...p, [e.id]: true })); avvisa('Iscrizione registrata', `Sei iscritto a "${e.nome}".`); }
+    else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
   };
 
   // "Attivi" = aperti alle iscrizioni o già in corso — cioè non ancora

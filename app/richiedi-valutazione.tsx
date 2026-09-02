@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getCentri, richiediValutazione } from '../lib/api';
+import { avvisa } from '../lib/avviso';
 import { Card, IconBadge, IconButton, Muted } from '../components/ui';
 import { useTheme } from '../lib/theme';
 import { Radius, Spacing, Font, AppColors } from '../constants/theme';
@@ -30,11 +31,11 @@ export default function RichiediValutazione() {
     const res = await richiediValutazione(me.id, c.id);
     setInviando(null);
     if (res.ok) {
-      Alert.alert('Richiesta inviata', `${c.nome} valuterà il tuo livello di gioco a ${sport ?? 'padel'}. Ti avviseremo appena sarà pronto.`, [
+      avvisa('Richiesta inviata', `${c.nome} valuterà il tuo livello di gioco a ${sport ?? 'padel'}. Ti avviseremo appena sarà pronto.`, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } else {
-      Alert.alert('Errore', res.error ?? 'Richiesta non riuscita.');
+      avvisa('Errore', res.error ?? 'Richiesta non riuscita.');
     }
   };
 

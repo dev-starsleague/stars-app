@@ -30,6 +30,18 @@ export interface Giocatore {
   created_at?: string;
 }
 
+// Orari di apertura per giorno della settimana (chiave = lun/mar/mer/gio/
+// ven/sab/dom). Il gestionale salva anche una forma legacy [apertura,
+// chiusura] per i centri creati prima dell'introduzione della pausa — vedi
+// lib/orari.ts, porting di stars-system src/routes/prenotazioni/+page.svelte
+// orariGiorno/orariSlots.
+export interface OrarioGiorno {
+  apertura: string; // HH:MM
+  chiusura: string; // HH:MM
+  pausa?: { inizio: string; fine: string } | null;
+}
+export type OrariCentro = Record<string, OrarioGiorno | [string, string]>;
+
 export interface Centro {
   id: string;
   nome: string;
@@ -41,6 +53,7 @@ export interface Centro {
   copertina_url: string | null;
   sport_attivi: string[];
   coin_nome: string; // es. "SC"
+  orari?: OrariCentro | null;
 }
 
 export interface ShopProdotto {
@@ -65,6 +78,11 @@ export interface Campo {
   tipo: string; // Indoor / Outdoor
   tariffe: Tariffa[];
   attivo: boolean;
+  // false = nascosto da tutte le superfici operative (planner incluso);
+  // solo_lezioni = prenotabile solo dallo staff per lezioni col maestro,
+  // mai per una prenotazione libera — stesso filtro campiVisti del planner.
+  visibile?: boolean;
+  solo_lezioni?: boolean;
 }
 
 export interface Tariffa {
@@ -73,6 +91,7 @@ export interface Tariffa {
   fine: string; // HH:MM
   prezzo: number;
   durata_base_min: number;
+  prezzo_tesserati?: number | null;
 }
 
 export type StatoPrenotazione = 'attesa' | 'completa';

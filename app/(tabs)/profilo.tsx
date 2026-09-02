@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import {
   getCentro, getPartiteGiocatore, getRankingAttuale, getStoricoRanking, getTessera,
   caricaFotoProfilo, updateProfilo, haVinto,
 } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
 import { apiUrl } from '../../lib/apiClient';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented } from '../../components/ui';
@@ -96,7 +97,7 @@ export default function Profilo() {
 
   const scegliFoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permesso negato', 'Serve il permesso per scegliere una foto dalla libreria.'); return; }
+    if (!perm.granted) { avvisa('Permesso negato', 'Serve il permesso per scegliere una foto dalla libreria.'); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
@@ -109,7 +110,7 @@ export default function Profilo() {
       await updateProfilo(me.id, { avatar_url: url });
       await refreshMe();
     } else if (error) {
-      Alert.alert('Errore', error);
+      avvisa('Errore', error);
     }
     setCaricandoFoto(false);
   };

@@ -19,6 +19,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [entrandoDemo, setEntrandoDemo] = useState(false);
 
   const onLogin = async () => {
     setErr(''); setLoading(true);
@@ -26,6 +27,13 @@ export default function Login() {
     setLoading(false);
     if (error) setErr(traduci(error));
     else router.replace('/(tabs)');
+  };
+
+  const onDemo = async () => {
+    setEntrandoDemo(true);
+    await enterDemo();
+    setEntrandoDemo(false);
+    router.replace('/(tabs)');
   };
 
   return (
@@ -65,7 +73,7 @@ export default function Login() {
               <Text style={s.demoText}>Backend non ancora configurato. Puoi esplorare l'app in modalità demo.</Text>
             </Card>
           )}
-          <Button title="Entra in modalità demo" variant="ghost" onPress={() => { enterDemo(); router.replace('/(tabs)'); }}
+          <Button title="Entra in modalità demo" variant="ghost" onPress={onDemo} loading={entrandoDemo}
             style={{ marginTop: Spacing.md }} />
         </ScrollView>
       </KeyboardAvoidingView>

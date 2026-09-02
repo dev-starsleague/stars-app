@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { apiGet, apiPost } from './apiClient';
+import { apiGet, apiPost, isApiConfigured } from './apiClient';
 import { getMioProfilo, isMock, setDemoDataMode } from './api';
 import type { Giocatore } from '../types/models';
 import { mockMe } from './mockData';
@@ -50,7 +50,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, nome: string, cognome: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
-  enterDemo: () => void;
+  enterDemo: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
 
@@ -120,7 +120,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   };
 
-  const enterDemo = () => {
+  // "Entra in modalità demo" NON deve isolare l'app dal gestionale reale
+  // (fix utente esplicito, ribadito più volte: finché non esiste un vero
+  // login, questo bottone è l'unico modo di entrare — deve comunque parlare
+  // col backend vero, non con dati finti). Se un backend è raggiungibile,
+  // "demo" diventa semplicemente "accedi come il primo giocatore reale
+  // censito" — stesso identico percorso di un signIn vero, dati reali,
+  // scritture reali sul planner. I dati finti (mockMe) restano SOLO
+  // l'ultima spiaggia: nessun backend configurato/raggiungibile, o nessun
+  // giocatore ancora censito nel gestionale.
+  const enterDemo = async () => {
+    if (isApiConfigured) {
+      const { data } = await apiGet<any[]>('/giocatori');
+      const primo = data && data.length > 0 ? data[0] : null;
+      if (primo) {
+        setDemoDataMode(false);
+        setDemoMode(false);
+        await salvaGiocatoreId(primo.id);
+        setSession({ giocatoreId: primo.id });
+        await caricaProfilo(primo.id);
+        return;
+      }
+    }
     setDemoDataMode(true);
     setDemoMode(true);
     setMe(mockMe);

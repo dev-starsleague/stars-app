@@ -197,10 +197,20 @@ export function Input({ icon, style, ...rest }: TextInputProps & { icon?: Ionico
   const { colors, glass, scheme } = useTheme();
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', height: 50, borderRadius: Radius.control, borderWidth: 1, borderColor: glass.regularBorder, paddingHorizontal: Spacing.lg, overflow: 'hidden' }, style]}>
-      <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
-      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
-      {icon && <Ionicons name={icon} size={18} color={colors.slate} style={{ marginRight: 10 }} />}
-      <TextInput placeholderTextColor={colors.slate} style={{ flex: 1, color: colors.navyDeep, fontSize: Font.body, height: '100%' }} {...rest} />
+      {/* Bug reale trovato (non solo qui — in OGNI Input dell'app, incluso
+          login): su web backdrop-filter fa sì che questi due livelli
+          decorativi vengano DIPINTI sopra il vero <input> nonostante siano
+          dichiarati prima nel JSX (backdrop-filter crea un proprio stacking
+          context che qui finiva davanti) — sia nell'hit-test (click
+          bloccati, fix già fatto con pointerEvents:'none') SIA nel disegno
+          a schermo (il testo digitato restava visivamente sotto la patina
+          di vetro, illeggibile/sfocato anche quando ormai si poteva
+          scrivere). zIndex esplicito forza l'ordine reale: decorazioni
+          dietro, contenuto (icona+testo) sempre sopra. */}
+      <BlurView intensity={glass.blur} tint={scheme} style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none', zIndex: 0 }]} />
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg, pointerEvents: 'none', zIndex: 0 }]} />
+      {icon && <Ionicons name={icon} size={18} color={colors.slate} style={{ marginRight: 10, zIndex: 1 }} />}
+      <TextInput placeholderTextColor={colors.slate} style={{ flex: 1, color: colors.navyDeep, fontSize: Font.body, height: '100%', zIndex: 1 }} {...rest} />
     </View>
   );
 }

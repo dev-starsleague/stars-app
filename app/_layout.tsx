@@ -5,6 +5,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { ThemeProvider, useTheme } from '../lib/theme';
+import { AlertHost } from '../lib/avviso';
 import { PhoneFrame } from '../components/PhoneFrame';
 
 function RootNav() {
@@ -38,9 +39,12 @@ function RootNav() {
         <Stack.Screen name="amici" options={{ presentation: 'card' }} />
         <Stack.Screen name="modifica-profilo" options={{ presentation: 'card' }} />
         <Stack.Screen name="giocatore/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="giorno/[data]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="impegni" options={{ presentation: 'card' }} />
         <Stack.Screen name="richiedi-valutazione" options={{ presentation: 'card' }} />
         <Stack.Screen name="stars-coin" options={{ presentation: 'card' }} />
       </Stack>
+      <AlertHost />
     </>
   );
 }

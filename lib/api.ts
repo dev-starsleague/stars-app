@@ -29,6 +29,15 @@ export function setDemoDataMode(attiva: boolean) { forzaMock = attiva; }
 
 const isMock = () => forzaMock || !isApiConfigured;
 
+// Secondo raggio di sicurezza, indipendente da forzaMock: forzaMock è una
+// variabile di modulo, non stato React — con Fast Refresh in sviluppo (un
+// salvataggio su questo stesso file la fa rieseguire da capo) può azzerarsi
+// mentre React "ricorda" ancora me=mockMe, e una scrittura finirebbe sul
+// backend vero con l'id fittizio "me" (visto succedere: POST /prenotazioni
+// → 422 "me" non è uno UUID valido). Qualunque funzione che scrive dati
+// legati a un giocatore controlla anche questo, non solo isMock().
+const eIlGiocatoreDemo = (giocatoreId?: string | null) => giocatoreId === mock.mockMe.id;
+
 // Il backend non ha colonne dedicate avatar_url/numero_tessera: vivono
 // dentro il JSON self-service `profilo` (vedi backend/app/schemas/giocatore.py,
 // ProfiloGiocatore). user_id era il collegamento a Supabase Auth: non più
@@ -53,7 +62,7 @@ export async function getCentro(): Promise<Centro> {
  *  di centri/gestionali, non solo uno — vedi Shop, che aggrega prodotti di
  *  ogni centro e fa scegliere quale). */
 export async function getCentri(): Promise<Centro[]> {
-  if (isMock()) return [mock.mockCentro, ...mock.mockAltriCentri];
+  if (isMock()) return [mock.mockCentro];
   const { data } = await apiGet<Centro[]>('/centri');
   return data ?? [];
 }
@@ -64,7 +73,7 @@ export async function getCentri(): Promise<Centro[]> {
  *  backend/app/models/giocatore_centro.py) — il giocatore compare così
  *  automaticamente nella coda "Giocatori da valutare" del gestionale. */
 export async function richiediValutazione(giocatoreId: string, centroId: string): Promise<{ ok: boolean; error?: string }> {
-  if (isMock()) return { ok: true };
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
   const { error } = await apiPost('/giocatori-centri', {
     giocatore_id: giocatoreId, centro_id: centroId, stato_valutazione: 'da_valutare', origine: 'richiesta_app',
   });
@@ -80,7 +89,7 @@ export async function getMioProfilo(giocatoreId: string | null): Promise<Giocato
 }
 
 export async function updateProfilo(id: string, patch: Partial<Giocatore>): Promise<void> {
-  if (isMock()) return;
+  if (isMock() || eIlGiocatoreDemo(id)) return;
   const { avatar_url, numero_tessera, profilo: profiloPatch, ...resto } = patch as any;
   const backendPatch: Record<string, unknown> = { ...resto };
   if (avatar_url !== undefined || numero_tessera !== undefined || profiloPatch !== undefined) {
@@ -117,10 +126,17 @@ export async function getGiocatori(): Promise<Giocatore[]> {
 }
 
 // ---------- Campi ----------
-export async function getCampi(): Promise<Campo[]> {
-  if (isMock()) return mock.mockCampi;
-  const { data } = await apiGet<Campo[]>('/campi', { attivo: true });
-  return sortBy(data, (c) => c.nome);
+/** Campi prenotabili di UN centro (il backend è condiviso da centinaia di
+ *  centri: senza filtro centro_id vedremmo i campi di tutti insieme — vedi
+ *  Prenota, che per questo chiede sempre prima il centro). Esclude, come il
+ *  planner del gestionale (campiVisti in prenotazioni/+page.svelte), i campi
+ *  nascosti (`visibile===false`) e quelli prenotabili solo dallo staff per
+ *  lezioni (`solo_lezioni`). */
+export async function getCampi(centroId: string): Promise<Campo[]> {
+  const visibili = (campi: Campo[]) => campi.filter((c) => c.visibile !== false && !c.solo_lezioni);
+  if (isMock()) return visibili(mock.mockCampi.filter((c) => c.centro_id === centroId));
+  const { data } = await apiGet<Campo[]>('/campi', { attivo: true, centro_id: centroId });
+  return sortBy(visibili(data ?? []), (c) => c.nome);
 }
 
 // ---------- Prenotazioni ----------
@@ -147,10 +163,21 @@ export async function getMiePrenotazioni(giocatoreId: string): Promise<Prenotazi
 export async function creaPrenotazione(input: {
   centro_id: string; campo_id: string; creata_da: string;
   data: string; inizio: string; fine: string; prezzo: number;
+  // giocatori invitati oltre a chi prenota (che c'è sempre, aggiunto qui
+  // sotto) — usati anche per derivare formato singolo/doppio, stessa
+  // convenzione del gestionale (2 giocatori → singolo, 4 → doppio).
+  invitati?: string[];
 }): Promise<{ ok: boolean; error?: string }> {
-  if (isMock()) return { ok: true };
+  if (isMock() || eIlGiocatoreDemo(input.creata_da)) return { ok: true };
+  const { invitati, ...resto } = input;
+  // chi prenota gioca sempre: senza questo la prenotazione non
+  // comparirebbe nel suo storico partite (getPartiteGiocatore filtra su
+  // giocatori_extra).
+  const giocatoriExtra = [input.creata_da, ...(invitati ?? [])];
+  const formato = giocatoriExtra.length === 2 ? 'singolo' : giocatoriExtra.length === 4 ? 'doppio' : null;
   const { error } = await apiPost('/prenotazioni', {
-    ...input, origine: 'app', tipo: 'prenotato', stato: 'completa', stato_pagamento: 'da_pagare',
+    ...resto, origine: 'app', tipo: 'prenotato', stato: 'completa', stato_pagamento: 'da_pagare',
+    giocatori_extra: giocatoriExtra, formato,
   });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
@@ -158,6 +185,20 @@ export async function creaPrenotazione(input: {
 export async function annullaPrenotazione(id: string): Promise<void> {
   if (isMock()) return;
   await apiDelete(`/prenotazioni/${id}`);
+}
+
+/** Registra il risultato di una partita già giocata — stesso endpoint del
+ *  planner (POST /prenotazioni/{id}/risultato), che alimenta sia i punti
+ *  classifica sia il PSL Ranking Engine. Richiede almeno un set e un
+ *  formato singolo/doppio già assegnato alla prenotazione. */
+export async function salvaRisultatoPartita(prenotazioneId: string, payload: {
+  sets: { a: number; b: number; tb?: boolean }[];
+  vincitore: 'A' | 'B';
+  sport: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPost(`/prenotazioni/${prenotazioneId}/risultato`, payload);
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 /** Tutte le partite (passate e future) a cui il giocatore ha preso parte,
@@ -168,8 +209,10 @@ export async function annullaPrenotazione(id: string): Promise<void> {
  *  (solo prenotazioni future, usata in Home) questa copre tutto lo storico. */
 export async function getPartiteGiocatore(giocatoreId: string): Promise<Prenotazione[]> {
   if (isMock()) return mock.mockPrenotazioni();
+  // Nessun filtro centro_id qui: un giocatore può aver giocato in centri
+  // diversi (era un bug, non una scelta — filtrava sempre sul centro demo).
   const [{ data: rows }, { data: campi }] = await Promise.all([
-    apiGet<Prenotazione[]>('/prenotazioni', { centro_id: mock.CENTRO_ID }),
+    apiGet<Prenotazione[]>('/prenotazioni'),
     apiGet<Campo[]>('/campi'),
   ]);
   const campoById = new Map((campi ?? []).map((c) => [c.id, c]));
@@ -299,8 +342,23 @@ export async function getEventi(): Promise<EventoCustom[]> {
   return sortBy(filtrati, (e) => e.data_evento ?? '');
 }
 
+/** Eventi a cui il giocatore è iscritto (in qualunque centro), per i
+ *  pallini "evento" del calendario Home — il generico filtra solo per
+ *  uguaglianza su UNA colonna alla volta, quindi giocatore_1_id/
+ *  giocatore_2_id vanno interrogati separatamente e uniti lato client. */
+export async function getEventiIscritti(giocatoreId: string): Promise<EventoCustom[]> {
+  if (isMock()) return mock.mockEventi.slice(0, 1);
+  const [{ data: p1 }, { data: p2 }, { data: eventi }] = await Promise.all([
+    apiGet<any[]>('/eventi-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<any[]>('/eventi-partecipanti', { giocatore_2_id: giocatoreId }),
+    apiGet<EventoCustom[]>('/eventi-custom'),
+  ]);
+  const eventoIds = new Set([...(p1 ?? []), ...(p2 ?? [])].map((p) => p.evento_id));
+  return (eventi ?? []).filter((e) => eventoIds.has(e.id));
+}
+
 export async function iscrivitiEvento(eventoId: string, giocatoreId: string): Promise<{ ok: boolean; error?: string }> {
-  if (isMock()) return { ok: true };
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
   // NOTA/limite noto: il backend richiede sempre una coppia completa
   // (giocatore_1_id + giocatore_2_id) per un'iscrizione — coerente col
   // motore tornei del gestionale, che genera i bracket solo su coppie
@@ -374,10 +432,7 @@ export async function getStarsCoin(giocatoreId: string): Promise<number> {
  *  in più centri) — join lato client coin-saldi × centri, stesso principio
  *  di getCentro/getCentri (il generico non fa join lato server). */
 export async function getStarsCoinPerCentro(giocatoreId: string): Promise<{ centro: Centro; saldo: number }[]> {
-  if (isMock()) return [
-    { centro: mock.mockCentro, saldo: mock.mockStarsCoin.saldo },
-    { centro: mock.mockAltriCentri[0], saldo: 35 },
-  ];
+  if (isMock()) return [{ centro: mock.mockCentro, saldo: mock.mockStarsCoin.saldo }];
   const [{ data: saldi }, centri] = await Promise.all([
     apiGet<any[]>('/coin-saldi', { giocatore_id: giocatoreId }),
     getCentri(),

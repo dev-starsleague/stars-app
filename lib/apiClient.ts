@@ -24,6 +24,21 @@ export const isApiConfigured = Boolean(process.env.EXPO_PUBLIC_API_URL);
 
 export type ApiResult<T> = { data: T | null; error: Error | null };
 
+/** Il `detail` di un errore 4xx/5xx del backend è già in italiano e
+ *  leggibile per le regole applicative (409 di conflitto, business rules —
+ *  "Lorenzo Gallo gioca già un'altra partita in questo orario"): quello va
+ *  mostrato così com'è, senza prefisso tecnico "METHOD /path → status:"
+ *  (fix utente esplicito: i popup non devono mostrare dettagli da
+ *  sviluppatore). Per la validazione (422) il `detail` è invece un JSON
+ *  grezzo di Pydantic — inutile e illeggibile per un giocatore, sostituito
+ *  da un messaggio generico. Il dettaglio tecnico completo resta comunque
+ *  in console per il debug, solo non nel popup mostrato all'utente. */
+function messaggioPulito(method: string, path: string, status: number, detail: string): string {
+  console.error(`${method} ${path} → ${status}: ${detail}`);
+  const tecnico = detail.trim().startsWith('[') || detail.trim().startsWith('{');
+  return tecnico ? 'Richiesta non valida. Riprova o contatta il centro.' : detail;
+}
+
 /** URL assoluto verso il backend per un path relativo (es. quello restituito
  *  da apiUpload) — usato per mostrare le immagini caricate. */
 export function apiUrl(path: string): string {
@@ -63,7 +78,7 @@ async function request<T = any>(
       } catch {
         // corpo errore non JSON: teniamo res.statusText
       }
-      return { data: null, error: new Error(`${method} ${path} → ${res.status}: ${detail}`) };
+      return { data: null, error: new Error(messaggioPulito(method, path, res.status, detail)) };
     }
 
     if (res.status === 204) return { data: null, error: null };
@@ -116,7 +131,7 @@ export async function apiUpload<T = any>(path: string, uri: string, mimeType: st
       } catch {
         // corpo errore non JSON: teniamo res.statusText
       }
-      return { data: null, error: new Error(`POST ${path} → ${res.status}: ${detail}`) };
+      return { data: null, error: new Error(messaggioPulito('POST', path, res.status, detail)) };
     }
     return { data: (await res.json()) as T, error: null };
   } catch (err) {

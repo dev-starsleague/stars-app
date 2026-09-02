@@ -18,18 +18,9 @@ export const mockCentro: Centro = {
   coin_nome: 'SC',
 };
 
-// Altri centri affiliati — solo per popolare in demo la scelta centro dello
-// Shop (filtro preferiti/geografico ha senso solo con più di un centro).
-export const mockAltriCentri: Centro[] = [
-  { id: '11111111-1111-1111-1111-111111111112', nome: 'PSL Firenze', citta: 'Firenze', provincia: 'Firenze', regione: 'Toscana', indirizzo: 'Via dei Campi 4', logo_url: null, copertina_url: null, sport_attivi: ['Padel', 'Tennis'], coin_nome: 'SC' },
-  { id: '11111111-1111-1111-1111-111111111113', nome: 'Padel Hero', citta: 'Roma', provincia: 'Roma', regione: 'Lazio', indirizzo: 'Via Appia 100', logo_url: null, copertina_url: null, sport_attivi: ['Padel'], coin_nome: 'SC' },
-];
-
 export const mockShopProdotti = [
   { id: 'sp1', centro_id: CENTRO_ID, nome: 'Grip Padel Pro', prezzo_coin: 15, prezzo_euro: null, descrizione: 'Grip antiscivolo, ricambio racchetta', immagine_url: null, stock: 20, varianti: [], attivo: true, condizione: 'nuovo' as const },
   { id: 'sp2', centro_id: CENTRO_ID, nome: 'T-Shirt Stars League', prezzo_coin: 40, prezzo_euro: 12, descrizione: 'Maglietta tecnica del centro', immagine_url: null, stock: 8, varianti: [], attivo: true, condizione: 'nuovo' as const },
-  { id: 'sp3', centro_id: '11111111-1111-1111-1111-111111111112', nome: 'Racchetta usata Head', prezzo_coin: 120, prezzo_euro: 35, descrizione: 'Racchetta demo, buone condizioni', immagine_url: null, stock: 1, varianti: [], attivo: true, condizione: 'usato' as const },
-  { id: 'sp4', centro_id: '11111111-1111-1111-1111-111111111113', nome: 'Cappellino Padel Hero', prezzo_coin: 25, prezzo_euro: null, descrizione: null, immagine_url: null, stock: 15, varianti: [], attivo: true, condizione: 'nuovo' as const },
 ];
 
 export const mockCampi: Campo[] = [

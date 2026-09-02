@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import { getRanking, inviaRichiestaAmicizia } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
 import { Card, H2, Muted, Avatar, Button, Divider, IconButton, Pill } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
 import { Spacing, Font, AppColors } from '../../constants/theme';
@@ -32,7 +33,7 @@ export default function GiocatoreProfilo() {
   const aggiungi = async () => {
     if (!me || !id) return;
     await inviaRichiestaAmicizia(me.id, id);
-    Alert.alert('Richiesta inviata', `Richiesta inviata a ${g?.nome ?? 'giocatore'}.${demoMode ? '\n\n(demo)' : ''}`);
+    avvisa('Richiesta inviata', `Richiesta inviata a ${g?.nome ?? 'giocatore'}.${demoMode ? '\n\n(demo)' : ''}`);
   };
 
   return (

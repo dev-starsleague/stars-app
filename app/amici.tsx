@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { getAmici, cercaGiocatori, inviaRichiestaAmicizia, accettaAmicizia } from '../lib/api';
+import { avvisa } from '../lib/avviso';
 import { Card, H2, Muted, Avatar, Button, Chip, IconButton, Input } from '../components/ui';
 import { useTheme } from '../lib/theme';
 import { Spacing, Font, AppColors } from '../constants/theme';
@@ -37,7 +38,7 @@ export default function Amici() {
   const aggiungi = async (g: Giocatore) => {
     if (!me) return;
     await inviaRichiestaAmicizia(me.id, g.id);
-    Alert.alert('Richiesta inviata', `Richiesta di amicizia inviata a ${g.nome}.${demoMode ? '\n\n(demo)' : ''}`);
+    avvisa('Richiesta inviata', `Richiesta di amicizia inviata a ${g.nome}.${demoMode ? '\n\n(demo)' : ''}`);
   };
   const accetta = async (a: Amicizia) => { await accettaAmicizia(a.id); load(); };
 

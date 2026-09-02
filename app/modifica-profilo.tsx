@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { updateProfilo } from '../lib/api';
+import { avvisa } from '../lib/avviso';
 import { Button, Card, Chip, IconButton, Input, Muted } from '../components/ui';
 import { useTheme } from '../lib/theme';
 import { Spacing, Font, AppColors } from '../constants/theme';
@@ -93,7 +94,7 @@ export default function ModificaProfilo() {
     });
     if (!demoMode) await refreshMe();
     setSaving(false);
-    Alert.alert('Salvato', `Profilo aggiornato.${demoMode ? '\n\n(demo: non salvato sul server)' : ''}`, [
+    avvisa('Salvato', `Profilo aggiornato.${demoMode ? '\n\n(demo: non salvato sul server)' : ''}`, [
       { text: 'OK', onPress: () => router.back() },
     ]);
   };
