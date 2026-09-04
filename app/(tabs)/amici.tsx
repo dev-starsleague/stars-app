@@ -4,13 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../lib/auth';
-import { getAmici, cercaGiocatori, inviaRichiestaAmicizia, accettaAmicizia } from '../lib/api';
-import { avvisa } from '../lib/avviso';
-import { Card, H2, Muted, Avatar, Button, Chip, IconButton, Input } from '../components/ui';
-import { useTheme } from '../lib/theme';
-import { Spacing, Font, AppColors } from '../constants/theme';
-import type { Amicizia, Giocatore } from '../types/models';
+import { useAuth } from '../../lib/auth';
+import { getAmici, cercaGiocatori, inviaRichiestaAmicizia, accettaAmicizia } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
+import { AppHeader } from '../../components/AppHeader';
+import { Card, H2, Muted, Avatar, Button, Chip, IconButton, Input } from '../../components/ui';
+import { useTheme } from '../../lib/theme';
+import { Spacing, Font, AppColors } from '../../constants/theme';
+import type { Amicizia, Giocatore } from '../../types/models';
 
 export default function Amici() {
   const { me, demoMode } = useAuth();
@@ -44,6 +45,7 @@ export default function Amici() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Amici</Text>

@@ -6,6 +6,7 @@ import { getClassifica } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Muted, Segmented } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
+import { useSport } from '../../lib/sport';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { ClassificaMensile, Genere } from '../../types/models';
 
@@ -16,12 +17,16 @@ import type { ClassificaMensile, Genere } from '../../types/models';
 // mese corrente).
 export default function StarDelMese() {
   const { colors } = useTheme();
+  const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const [genere, setGenere] = useState<Genere>('M');
   const [lista, setLista] = useState<ClassificaMensile[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => { setLista(await getClassifica(genere)); }, [genere]);
+  // Sport globale scelto nell'header: la classifica è per sport, non solo
+  // per genere (fix utente esplicito — "vedrò le classifiche dello sport
+  // selezionato").
+  const load = useCallback(async () => { setLista(await getClassifica(genere, sportAttivo)); }, [genere, sportAttivo]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
@@ -37,7 +42,7 @@ export default function StarDelMese() {
 
         {/* Card filtri vetro liquido */}
         <Card style={s.filterCard}>
-          <Text style={s.filterLabel}>{cap(nomeMese)}</Text>
+          <Text style={s.filterLabel}>{cap(nomeMese)} · {sportAttivo}</Text>
           <Segmented
             value={genere}
             onChange={(v) => setGenere(v as Genere)}
@@ -71,7 +76,7 @@ export default function StarDelMese() {
             <Text style={s.rowScore}>{r.punti} pt</Text>
           </Card>
         ))}
-        {lista.length === 0 && <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun punteggio questo mese.</Muted>}
+        {lista.length === 0 && <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Nessun punteggio questo mese per {sportAttivo}.</Muted>}
         <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>

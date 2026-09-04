@@ -13,7 +13,7 @@ import { fasciaDaScore } from './stars';
 import type {
   Campo, Centro, ClassificaMensile, EventoCustom, EventoStorico, Giocatore,
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
-  CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto,
+  CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -146,6 +146,22 @@ export async function getPrenotazioniGiorno(campoIds: string[], data: string): P
   return (rows ?? []).filter((p) => p.campo_id && campoIds.includes(p.campo_id));
 }
 
+/** Prenotazioni del giocatore in un giorno, su QUALSIASI campo/sport/centro
+ *  — usata da Prenota per bloccare in anticipo, in UI, uno slot che si
+ *  accavallerebbe con un impegno già preso per un altro sport (fix utente
+ *  esplicito: "se ho una prenotazione per uno sport non devo poter fare una
+ *  prenotazione che si accavalli alla prima per qualsiasi sport"). Il
+ *  backend rifiuta comunque la sovrapposizione a prescindere da questo
+ *  controllo lato client (_valida_conflitto_giocatori, per persona non per
+ *  campo) — questo serve solo a non far scoprire il conflitto al giocatore
+ *  solo alla conferma finale, dopo aver già scelto orario/campo/invitati.
+ *  Le lezioni non contano come impegno qui, stessa esclusione del backend. */
+export async function getPrenotazioniGiornoGiocatore(giocatoreId: string, data: string): Promise<Prenotazione[]> {
+  if (isMock()) return mock.mockPrenotazioni().filter((p) => p.data === data && p.giocatori_extra?.includes(giocatoreId));
+  const { data: rows } = await apiGet<Prenotazione[]>('/prenotazioni', { data });
+  return (rows ?? []).filter((p) => p.tipo !== 'lezione' && p.giocatori_extra?.includes(giocatoreId));
+}
+
 export async function getMiePrenotazioni(giocatoreId: string): Promise<Prenotazione[]> {
   if (isMock()) return mock.mockPrenotazioni();
   const oggi = new Date().toISOString().slice(0, 10);
@@ -240,14 +256,14 @@ export function haVinto(p: Prenotazione, giocatoreId: string): boolean | null {
 }
 
 // ---------- Ranking ----------
-export async function getRanking(): Promise<(RankingGiocatore & { giocatore?: Giocatore })[]> {
+export async function getRanking(sport: string = 'Padel'): Promise<(RankingGiocatore & { giocatore?: Giocatore })[]> {
   if (isMock()) {
     return mock.mockRanking
       .map((r) => ({ ...r, giocatore: mock.mockGiocatori.find((g) => g.id === r.giocatore_id) }))
       .sort((a, b) => b.ranking - a.ranking);
   }
   const [{ data: ranking }, { data: giocatori }] = await Promise.all([
-    apiGet<RankingGiocatore[]>('/ranking-giocatori', { sport: 'Padel' }),
+    apiGet<RankingGiocatore[]>('/ranking-giocatori', { sport }),
     apiGet<any[]>('/giocatori'),
   ]);
   const giocatoreById = new Map((giocatori ?? []).map((g) => [g.id, mapGiocatore(g)]));
@@ -309,18 +325,86 @@ export async function getRankingAttuale(giocatoreId: string, sport: string): Pro
 }
 
 // ---------- Classifica mensile ----------
-export async function getClassifica(genere: 'M' | 'F'): Promise<ClassificaMensile[]> {
+/** `centroId` opzionale: senza, mescola le righe di TUTTI i centri (comportamento
+ *  storico, invariato) — con, filtra alla "Star del mese" di quel solo centro
+ *  (fix utente esplicito: widget Home "classifica star del mese di un
+ *  determinato centro"). ClassificaMensile è già scoped per centro_id nel
+ *  backend (una riga per centro/sport/giocatore/mese/genere), qui si passa
+ *  solo il filtro in più al generico. */
+export async function getClassifica(genere: 'M' | 'F', sport: string = 'Padel', centroId?: string): Promise<ClassificaMensile[]> {
   const mese = meseCorrente();
   if (isMock()) {
-    return mock.mockClassifica.filter((c) => c.genere === genere).sort(ordinaClassifica);
+    return mock.mockClassifica
+      .filter((c) => c.genere === genere && c.sport === sport && (!centroId || c.centro_id === centroId))
+      .sort(ordinaClassifica);
   }
+  const params: Record<string, string> = { mese, genere, sport };
+  if (centroId) params.centro_id = centroId;
   const [{ data: righe }, { data: giocatori }] = await Promise.all([
-    apiGet<ClassificaMensile[]>('/classifica-mensile', { mese, genere }),
+    apiGet<ClassificaMensile[]>('/classifica-mensile', params),
     apiGet<any[]>('/giocatori'),
   ]);
   const giocatoreById = new Map((giocatori ?? []).map((g) => [g.id, mapGiocatore(g)]));
   const arricchita = (righe ?? []).map((c) => ({ ...c, giocatore: giocatoreById.get(c.giocatore_id) }));
   return arricchita.sort(ordinaClassifica);
+}
+
+export interface PosizioneClassifica { posizione: number; totale: number; valore: number }
+
+/** Giocatori affiliati a un centro (righe giocatori_centri) — usato per
+ *  restringere una classifica ranking "di un centro" o "di una zona" ai
+ *  soli giocatori di quel/quei centri (fix utente esplicito, widget Home). */
+async function getMembriCentri(centroIds: string[]): Promise<Set<string>> {
+  if (isMock() || centroIds.length === 0) return new Set();
+  const risultati = await Promise.all(centroIds.map((id) => apiGet<any[]>('/giocatori-centri', { centro_id: id })));
+  const ids = new Set<string>();
+  for (const { data } of risultati) for (const riga of data ?? []) ids.add(riga.giocatore_id);
+  return ids;
+}
+
+/** Posizione del giocatore nel ranking (PSL Ranking Engine) tra i pari
+ *  categoria (stesso sport + stesso genere) — "globale" = tra TUTTI i
+ *  centri, il vero ranking nazionale (fix utente esplicito: "ranking
+ *  globale del giocatore nella propria categoria"). Nessun nuovo endpoint:
+ *  /ranking-giocatori è già globale (non scoped per centro), si calcola la
+ *  posizione lato client sull'elenco già ordinato da getRanking. */
+export async function posizioneRankingGlobale(giocatoreId: string, sport: string): Promise<PosizioneClassifica | null> {
+  const righe = await getRanking(sport);
+  const io = righe.find((r) => r.giocatore_id === giocatoreId);
+  if (!io || !io.giocatore?.genere) return null;
+  const pari = righe.filter((r) => r.giocatore?.genere === io.giocatore!.genere);
+  const posizione = pari.findIndex((r) => r.giocatore_id === giocatoreId);
+  if (posizione < 0) return null;
+  return { posizione: posizione + 1, totale: pari.length, valore: io.ranking };
+}
+
+/** Come sopra, ma ristretto ai giocatori affiliati a UN centro (widget Home
+ *  "classifica per ranking di un determinato centro"). */
+export async function posizioneRankingCentro(giocatoreId: string, sport: string, centroId: string): Promise<PosizioneClassifica | null> {
+  const [righe, membri] = await Promise.all([getRanking(sport), getMembriCentri([centroId])]);
+  const io = righe.find((r) => r.giocatore_id === giocatoreId);
+  if (!io || !io.giocatore?.genere) return null;
+  const pari = righe.filter((r) => r.giocatore?.genere === io.giocatore!.genere && membri.has(r.giocatore_id));
+  const posizione = pari.findIndex((r) => r.giocatore_id === giocatoreId);
+  if (posizione < 0) return null;
+  return { posizione: posizione + 1, totale: pari.length, valore: io.ranking };
+}
+
+/** Come sopra, ma ristretto ai giocatori affiliati a un qualunque centro di
+ *  una regione/provincia (widget Home "classifica per ranking di una zona,
+ *  provincia ecc"). */
+export async function posizioneRankingZona(
+  giocatoreId: string, sport: string, tipo: 'regione' | 'provincia', valore: string
+): Promise<PosizioneClassifica | null> {
+  const centri = await getCentri();
+  const centriZona = centri.filter((c) => (tipo === 'regione' ? c.regione : c.provincia) === valore);
+  const [righe, membri] = await Promise.all([getRanking(sport), getMembriCentri(centriZona.map((c) => c.id))]);
+  const io = righe.find((r) => r.giocatore_id === giocatoreId);
+  if (!io || !io.giocatore?.genere) return null;
+  const pari = righe.filter((r) => r.giocatore?.genere === io.giocatore!.genere && membri.has(r.giocatore_id));
+  const posizione = pari.findIndex((r) => r.giocatore_id === giocatoreId);
+  if (posizione < 0) return null;
+  return { posizione: posizione + 1, totale: pari.length, valore: io.ranking };
 }
 
 function ordinaClassifica(a: ClassificaMensile, b: ClassificaMensile) {
@@ -340,6 +424,16 @@ export async function getEventi(): Promise<EventoCustom[]> {
     .filter((e) => e.stato === 'ready' || e.stato === 'in_corso')
     .map((e) => ({ ...e, iscritti_count: conteggi.get(e.id) ?? 0 }));
   return sortBy(filtrati, (e) => e.data_evento ?? '');
+}
+
+/** Eventi che il centro ha scelto di promuovere nel carosello ADV della
+ *  Home (fix utente esplicito) — flag "in_evidenza" impostato dal
+ *  gestionale sull'evento (stars-system/src/routes/eventi/[id]/+page.svelte),
+ *  non tutti gli eventi pubblicati automaticamente. */
+export async function getEventiInEvidenza(): Promise<EventoCustom[]> {
+  if (isMock()) return mock.mockEventi.filter((e) => e.in_evidenza);
+  const eventi = await getEventi();
+  return eventi.filter((e) => e.in_evidenza);
 }
 
 /** Eventi a cui il giocatore è iscritto (in qualunque centro), per i
@@ -401,9 +495,9 @@ export async function accettaAmicizia(_id: string): Promise<void> {
 }
 
 // ---------- Stars League ----------
-export async function getStars(giocatoreId: string): Promise<StarsProfilo> {
+export async function getStars(giocatoreId: string, sport: string = 'Padel'): Promise<StarsProfilo> {
   if (isMock()) return mock.mockStars;
-  const { data } = await apiGetFirst<any>('/ranking-giocatori', { giocatore_id: giocatoreId, sport: 'Padel' });
+  const { data } = await apiGetFirst<any>('/ranking-giocatori', { giocatore_id: giocatoreId, sport });
   const score = data?.ranking ?? 0;
   const stimato = data?.stato === 'attivo';
   return {
@@ -467,6 +561,94 @@ export async function getProdottiShop(centroId: string): Promise<ShopProdotto[]>
   return data ?? [];
 }
 
+/** Acquista un prodotto dello shop — stesso endpoint atomico del
+ *  gestionale (POST /shop-acquisti/acquista: scala le scorte, incassa e
+ *  crea l'acquisto in un solo commit, vedi backend/app/routers/shop.py).
+ *  `metodo`: 'coin' scala subito il saldo Star Coin del giocatore (il
+ *  backend rifiuta da sé se il saldo non basta) — 'euro' non è un vero
+ *  pagamento online (questo progetto non ha una passerella di pagamento,
+ *  vedi la sponsorizzazione "demo"): registra l'acquisto con metodo
+ *  "non_categorizzato", da saldare e ritirare fisicamente al centro,
+ *  stesso principio già in uso per le prenotazioni campo "da pagare"
+ *  (fix utente esplicito: "decidere se pagarlo in Star Coin o €"). */
+export async function acquistaProdotto(input: {
+  giocatoreId: string; prodottoId: string; variante?: string | null; metodo: 'coin' | 'euro';
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.giocatoreId)) return { ok: true };
+  const { error } = await apiPost('/shop-acquisti/acquista', {
+    p_giocatore: input.giocatoreId, p_prodotto: input.prodottoId, p_variante: input.variante ?? null,
+    p_quantita: 1, metodo: input.metodo === 'coin' ? 'coin' : 'non_categorizzato',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Acquisto vero di un pacchetto abbonamento (lezioni o campo) — stesso
+ *  principio di acquistaProdotto: in Star Coin scala subito il saldo (il
+ *  backend rifiuta se non basta), in € registra l'acquisto da saldare al
+ *  centro (nessuna passerella di pagamento reale in questo progetto). */
+export async function acquistaAbbonamento(input: {
+  giocatoreId: string; templateId: string; metodo: 'coin' | 'euro';
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.giocatoreId)) return { ok: true };
+  const { error } = await apiPost('/abbonamento-istanza/acquista', {
+    p_giocatore: input.giocatoreId, p_template: input.templateId,
+    metodo: input.metodo === 'coin' ? 'coin' : 'non_categorizzato',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Prodotti sponsorizzati (a pagamento, dal gestionale del centro) di
+ *  TUTTI i centri — carosello ADV della Home (fix utente esplicito). Nessun
+ *  filtro sport qui: lo applica il chiamante con sportAttivo, stessa regola
+ *  già in uso per lo Shop. */
+export async function getProdottiSponsorizzati(): Promise<ShopProdotto[]> {
+  if (isMock()) return mock.mockShopProdotti.filter((p) => p.sponsorizzato);
+  const { data } = await apiGet<ShopProdotto[]>('/shop-prodotti', { sponsorizzato: true, attivo: true });
+  // Il flag sponsorizzato da solo non basta: una campagna scaduta resta
+  // sponsorizzato=true finché lo staff non la tocca di nuovo (nessun cron
+  // di scadenza, vedi backend/app/models/shop.py) — "attivo davvero" è
+  // sempre il confronto con sponsorizzato_fino, qui e in ogni altro punto
+  // che legge questo flag (fix utente esplicito: durata della campagna).
+  return (data ?? []).filter((p) => p.sponsorizzato_fino && p.sponsorizzato_fino >= oggiISO());
+}
+
+/** Pacchetti abbonamento in vendita in un centro (lezioni o campo) — stessa
+ *  entità/endpoint del gestionale (AbbonamentoTemplate, "Shop → Abbonamenti").
+ *  Acquistabili anche dall'app, vedi acquistaAbbonamento. */
+export async function getAbbonamentiShop(centroId: string): Promise<AbbonamentoTemplate[]> {
+  if (isMock()) return mock.mockAbbonamentiTemplate.filter((a) => a.centro_id === centroId);
+  const { data } = await apiGet<AbbonamentoTemplate[]>('/abbonamento-template', { centro_id: centroId, attivo: true });
+  return data ?? [];
+}
+
+/** Abbonamenti sponsorizzati (a pagamento, dal gestionale) di TUTTI i
+ *  centri — carosello ADV della Home, stesso principio di
+ *  getProdottiSponsorizzati (fix utente esplicito: "Sponsorizza" ora vale
+ *  anche per gli abbonamenti, non solo per i prodotti shop). */
+export async function getAbbonamentiSponsorizzati(): Promise<AbbonamentoTemplate[]> {
+  if (isMock()) return mock.mockAbbonamentiTemplate.filter((a) => a.sponsorizzato);
+  const { data } = await apiGet<AbbonamentoTemplate[]>('/abbonamento-template', { sponsorizzato: true, attivo: true });
+  return (data ?? []).filter((a) => a.sponsorizzato_fino && a.sponsorizzato_fino >= oggiISO());
+}
+
+// ---------- Statistiche sponsorizzazioni (impression/click) ----------
+/** Un'impressione: la scheda ADV di quel prodotto/abbonamento è diventata
+ *  la pagina attiva del carosello Home — fire-and-forget, nessun impatto
+ *  sull'esperienza se fallisce (mai await-ata dal chiamante per bloccare
+ *  lo scroll). @param tipoTarget 'prodotto' | 'abbonamento' */
+export async function registraImpressioneSponsor(centroId: string, tipoTarget: 'prodotto' | 'abbonamento', targetId: string, giocatoreId?: string): Promise<void> {
+  if (isMock()) return;
+  await apiPost('/sponsor-eventi', { centro_id: centroId, tipo_target: tipoTarget, target_id: targetId, tipo_evento: 'impression', giocatore_id: giocatoreId ?? null });
+}
+
+/** Un click: il giocatore ha toccato la scheda/la tile di quell'elemento
+ *  sponsorizzato — usato dal cruscotto statistiche del centro per CTR e
+ *  per attribuire le conversioni (fix utente esplicito). */
+export async function registraClickSponsor(centroId: string, tipoTarget: 'prodotto' | 'abbonamento', targetId: string, giocatoreId?: string): Promise<void> {
+  if (isMock()) return;
+  await apiPost('/sponsor-eventi', { centro_id: centroId, tipo_target: tipoTarget, target_id: targetId, tipo_evento: 'click', giocatore_id: giocatoreId ?? null });
+}
+
 export async function getTessera(): Promise<Tessera> {
   return mock.mockTessera;
 }
@@ -474,6 +656,11 @@ export async function getTessera(): Promise<Tessera> {
 export function meseCorrente(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function oggiISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export { isMock };

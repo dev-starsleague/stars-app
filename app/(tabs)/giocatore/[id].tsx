@@ -3,30 +3,34 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../../lib/auth';
-import { getRanking, inviaRichiestaAmicizia } from '../../lib/api';
-import { avvisa } from '../../lib/avviso';
-import { Card, H2, Muted, Avatar, Button, Divider, IconButton, Pill } from '../../components/ui';
-import { useTheme } from '../../lib/theme';
-import { Spacing, Font, AppColors } from '../../constants/theme';
-import type { Giocatore } from '../../types/models';
+import { useAuth } from '../../../lib/auth';
+import { getRanking, inviaRichiestaAmicizia } from '../../../lib/api';
+import { avvisa } from '../../../lib/avviso';
+import { AppHeader } from '../../../components/AppHeader';
+import { Card, H2, Muted, Avatar, Button, Divider, IconButton, Pill } from '../../../components/ui';
+import { useTheme } from '../../../lib/theme';
+import { useSport } from '../../../lib/sport';
+import { Spacing, Font, AppColors } from '../../../constants/theme';
+import type { Giocatore } from '../../../types/models';
 
 export default function GiocatoreProfilo() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me, demoMode } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
+  const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const [g, setG] = useState<Giocatore | null>(null);
   const [rank, setRank] = useState<number | null>(null);
 
+  // Ranking nello sport globale scelto nell'header (fix utente esplicito).
   useEffect(() => {
-    getRanking().then((rows) => {
+    getRanking(sportAttivo).then((rows) => {
       const found = rows.find((r) => r.giocatore_id === id);
       if (found?.giocatore) setG(found.giocatore as Giocatore);
-      if (found) setRank(found.ranking);
+      setRank(found ? found.ranking : null);
     });
-  }, [id]);
+  }, [id, sportAttivo]);
 
   const nome = g ? `${g.nome} ${g.cognome}` : 'Giocatore';
 
@@ -38,6 +42,7 @@ export default function GiocatoreProfilo() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Profilo</Text>
@@ -52,7 +57,7 @@ export default function GiocatoreProfilo() {
         </View>
 
         <View style={s.stats}>
-          <Card style={s.stat}><Text style={s.statValue}>{rank ? rank.toFixed(2) : '—'}</Text><Muted>Ranking</Muted></Card>
+          <Card style={s.stat}><Text style={s.statValue}>{rank ? rank.toFixed(2) : '—'}</Text><Muted>Ranking {sportAttivo}</Muted></Card>
           <Card style={s.stat}><Text style={s.statValue}>{g?.posizione ? cap(g.posizione) : '—'}</Text><Muted>Posizione</Muted></Card>
         </View>
 

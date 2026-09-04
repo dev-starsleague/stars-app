@@ -3,19 +3,20 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../lib/auth';
-import { updateProfilo } from '../lib/api';
-import { avvisa } from '../lib/avviso';
-import { Button, Card, Chip, IconButton, Input, Muted } from '../components/ui';
-import { useTheme } from '../lib/theme';
-import { Spacing, Font, AppColors } from '../constants/theme';
-import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../types/models';
+import { useAuth } from '../../lib/auth';
+import { updateProfilo } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
+import { AppHeader } from '../../components/AppHeader';
+import { Button, Card, Chip, IconButton, Input, Muted } from '../../components/ui';
+import { useTheme } from '../../lib/theme';
+import { Spacing, Font, AppColors } from '../../constants/theme';
+import { SPORT_DISPONIBILI } from '../../lib/stars';
+import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../../types/models';
 
 // Stessi campi del form "Modifica giocatore" del gestionale
 // (src/routes/giocatori/+page.svelte), riorganizzati nelle 4 sezioni chieste:
 // Anagrafica, Contatti, Preferenze di gioco, Disponibilità oraria.
 const GIORNI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
-const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis'];
 
 export default function ModificaProfilo() {
   const { me, refreshMe, demoMode } = useAuth();
@@ -101,6 +102,7 @@ export default function ModificaProfilo() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Modifica profilo</Text>

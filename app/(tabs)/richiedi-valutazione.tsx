@@ -3,13 +3,14 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../lib/auth';
-import { getCentri, richiediValutazione } from '../lib/api';
-import { avvisa } from '../lib/avviso';
-import { Card, IconBadge, IconButton, Muted } from '../components/ui';
-import { useTheme } from '../lib/theme';
-import { Radius, Spacing, Font, AppColors } from '../constants/theme';
-import type { Centro } from '../types/models';
+import { useAuth } from '../../lib/auth';
+import { getCentri, richiediValutazione } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
+import { AppHeader } from '../../components/AppHeader';
+import { Card, IconBadge, IconButton, Muted } from '../../components/ui';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
+import type { Centro } from '../../types/models';
 
 // Sceglie il centro da cui farsi valutare: crea la riga giocatori_centri
 // (origine "richiesta_app") che fa comparire il giocatore nella coda
@@ -41,6 +42,7 @@ export default function RichiediValutazione() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>Scopri il tuo ranking</Text>

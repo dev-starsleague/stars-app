@@ -4,15 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../../lib/auth';
 import {
   getPartiteGiocatore, getEventiIscritti, getGiocatori, getCentri, salvaRisultatoPartita, haVinto,
-} from '../lib/api';
-import { avvisa } from '../lib/avviso';
-import { Card, IconBadge, IconButton, Muted, Button, Chip } from '../components/ui';
-import { useTheme } from '../lib/theme';
-import { Radius, Spacing, Font, AppColors, AppGlass } from '../constants/theme';
-import type { Prenotazione, EventoCustom, Giocatore, Centro } from '../types/models';
+} from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
+import { serveRisultato, servePagamento } from '../../lib/impegni';
+import { AppHeader } from '../../components/AppHeader';
+import { Card, IconBadge, IconButton, Muted, Button, Chip } from '../../components/ui';
+import { useTheme } from '../../lib/theme';
+import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
+import type { Prenotazione, EventoCustom, Giocatore, Centro } from '../../types/models';
 
 const GIORNI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
@@ -33,12 +35,6 @@ function squadraDi(p: Prenotazione, giocatoreId: string): 'a' | 'b' {
   return squadraA.includes(giocatoreId) ? 'a' : 'b';
 }
 
-function serveRisultato(p: Prenotazione): boolean {
-  return p.tipo !== 'lezione' && Boolean(p.formato) && !p.risultato;
-}
-function servePagamento(p: Prenotazione): boolean {
-  return p.stato_pagamento === 'da_pagare';
-}
 
 interface SetInput { a: string; b: string; tb: boolean }
 const SET_VUOTO = (): SetInput => ({ a: '', b: '', tb: false });
@@ -210,6 +206,7 @@ export default function Impegni() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title}>I miei impegni</Text>

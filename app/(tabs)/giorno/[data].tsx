@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '../../lib/auth';
-import { getPartiteGiocatore, getEventiIscritti, getEventi, iscrivitiEvento } from '../../lib/api';
-import { avvisa } from '../../lib/avviso';
-import { Card, IconBadge, IconButton, Muted, Button } from '../../components/ui';
-import { useTheme } from '../../lib/theme';
-import { Spacing, Font, AppColors } from '../../constants/theme';
-import type { Prenotazione, EventoCustom } from '../../types/models';
+import { useAuth } from '../../../lib/auth';
+import { getPartiteGiocatore, getEventiIscritti, getEventi, iscrivitiEvento } from '../../../lib/api';
+import { avvisa } from '../../../lib/avviso';
+import { AppHeader } from '../../../components/AppHeader';
+import { Card, IconBadge, IconButton, Muted, Button } from '../../../components/ui';
+import { useTheme } from '../../../lib/theme';
+import { Spacing, Font, AppColors } from '../../../constants/theme';
+import type { Prenotazione, EventoCustom } from '../../../types/models';
 
 const GIORNI = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 const MESI = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
@@ -97,6 +98,7 @@ export default function GiornoDettaglio() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <View style={s.topbar}>
         <IconButton icon="chevron-back" onPress={() => router.back()} />
         <Text style={s.title} numberOfLines={1}>{data ? etichettaGiornoLunga(data) : ''}</Text>

@@ -8,12 +8,14 @@ import { getCircuito, getClassificaNazionale, getStars } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, IconBadge, Muted } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
+import { useSport } from '../../lib/sport';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { CircuitoNazionale, RigaClassificaNazionale, StarsProfilo } from '../../types/models';
 
 export default function Stars() {
   const { me } = useAuth();
   const { colors } = useTheme();
+  const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const [circ, setCirc] = useState<CircuitoNazionale | null>(null);
   const [classifica, setClassifica] = useState<RigaClassificaNazionale[]>([]);
@@ -22,10 +24,10 @@ export default function Stars() {
 
   const load = useCallback(async () => {
     const [c, cl, st] = await Promise.all([
-      getCircuito(), getClassificaNazionale(), me ? getStars(me.id) : Promise.resolve(null),
+      getCircuito(), getClassificaNazionale(), me ? getStars(me.id, sportAttivo) : Promise.resolve(null),
     ]);
     setCirc(c); setClassifica(cl); setStars(st);
-  }, [me]);
+  }, [me, sportAttivo]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
@@ -39,7 +41,7 @@ export default function Stars() {
           <Ionicons name="star" size={16} color={colors.gold} />
           <Text style={s.brandText}>Stars League</Text>
         </View>
-        <Text style={s.title}>Stars Circuit</Text>
+        <Text style={s.title}>Stars Circuit · {sportAttivo}</Text>
         <Muted style={{ marginBottom: Spacing.lg }}>Il circuito nazionale PSL — classifica unificata tra tutti i centri affiliati</Muted>
 
         {/* Card stagione */}

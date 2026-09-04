@@ -40,6 +40,11 @@ export function coloreFascia(fascia: Fascia, colors: AppColors): string {
 
 export const FASCE_ORDINATE: Fascia[] = ['Spark', '1★', '2★', '3★', '4★', '5★', '6★'];
 
+// Elenco sport della piattaforma — unica fonte (prima duplicato localmente
+// in modifica-profilo.tsx), usato anche dal selettore sport nell'header
+// (vedi lib/sport.tsx).
+export const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis'];
+
 export const BADGE_CATALOGO = [
   { id: 'b1', nome: 'Prima partita', descrizione: 'Ha giocato la sua prima partita PSL', icona: '🎾' },
   { id: 'b2', nome: 'Prima vittoria', descrizione: 'Ha vinto la sua prima partita', icona: '🏆' },

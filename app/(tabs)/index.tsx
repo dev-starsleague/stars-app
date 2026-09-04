@@ -4,33 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { getStars, getPartiteGiocatore, getEventiIscritti } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
+import { HomeCarousel } from '../../components/HomeCarousel';
 import { Card, Muted } from '../../components/ui';
-import { Radius, Spacing, Font, CORNER_SMOOTHING, AppColors } from '../../constants/theme';
+import { getGreeting, oggiISO } from '../../lib/saluto';
+import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { StarsProfilo, Prenotazione, EventoCustom } from '../../types/models';
 
 const GIORNI_SETT = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
 const MESI = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
-
-// Saluto generico: nome o nickname scelti a caso, formula scelta a caso —
-// versione provvisoria in attesa del file MD con le regole definitive.
-const SALUTI = [
-  (n: string) => `Ciao, ${n}!`,
-  (n: string) => `Bentornato, ${n}!`,
-  (n: string) => `Pronto a scendere in campo, ${n}?`,
-  (n: string) => `Che si gioca oggi, ${n}?`,
-  (n: string) => `Bella, ${n}! 🎾`,
-];
-function salutoCasuale(nome?: string | null, nickname?: string | null): string {
-  const candidati = [nome, nickname].filter((v): v is string => Boolean(v));
-  const chi = candidati.length ? candidati[Math.floor(Math.random() * candidati.length)] : 'Giocatore';
-  const tpl = SALUTI[Math.floor(Math.random() * SALUTI.length)];
-  return tpl(chi);
-}
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 function isoGiorno(anno: number, mese: number, giorno: number) { return `${anno}-${pad(mese + 1)}-${pad(giorno)}`; }
@@ -44,7 +29,24 @@ export default function Home() {
   const [partite, setPartite] = useState<Prenotazione[]>([]);
   const [eventiIscritti, setEventiIscritti] = useState<EventoCustom[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const saluto = useMemo(() => salutoCasuale(me?.nome, me?.profilo?.nickname), [me?.id]);
+
+  // Partite da qui ai prossimi 7 giorni (oggi escluso, come da spec) ed
+  // evento a cui si è iscritti in data odierna — i due impegni reali che
+  // guidano il saluto adattivo (vedi lib/saluto.ts).
+  const partiteSettimana = useMemo(() => {
+    const oggi = oggiISO();
+    const fine = new Date(); fine.setDate(fine.getDate() + 7);
+    const fineISO = `${fine.getFullYear()}-${pad(fine.getMonth() + 1)}-${pad(fine.getDate())}`;
+    return partite.filter((p) => p.data && p.data > oggi && p.data <= fineISO).length;
+  }, [partite]);
+  const haEventoOggi = useMemo(() => {
+    const oggi = oggiISO();
+    return eventiIscritti.some((e) => e.data_evento === oggi);
+  }, [eventiIscritti]);
+  const saluto = useMemo(
+    () => getGreeting(me?.nome ?? 'Giocatore', me?.profilo?.nickname ?? '', partiteSettimana, haEventoOggi),
+    [me?.id, me?.nome, me?.profilo?.nickname, partiteSettimana, haEventoOggi]
+  );
 
   const load = useCallback(async () => {
     const [st, pt, ev] = await Promise.all([
@@ -70,22 +72,12 @@ export default function Home() {
 
         <Text style={s.tip}>{saluto}</Text>
 
+        {/* Carosello: ranking + widget personalizzabili, poi ADV di eventi
+            e prodotti sponsorizzati dai centri (fix utente esplicito) */}
+        <HomeCarousel />
+
         {/* Calendario mese */}
         <CalendarWidget partite={partite} eventi={eventiIscritti} onPick={apriGiorno} />
-
-        <Pressable onPress={() => router.push('/(tabs)/prenota')}>
-          <Card style={s.ctaCard}>
-            <View style={s.ctaIcon}>
-              <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.compact, cornerSmoothing: CORNER_SMOOTHING, fillColor: colors.gold }} />
-              <Ionicons name="add" size={22} color={colors.navyDeep} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.ctaTitle}>Prenota un campo</Text>
-              <Muted>Trova uno slot libero nei centri PSL</Muted>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.slate} />
-          </Card>
-        </Pressable>
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -225,8 +217,5 @@ function makeStyles(colors: AppColors) {
     calDotImpegno: { width: 5, height: 5, borderRadius: 3 },
     impegniToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: Spacing.md, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: colors.navyLine + '22' },
     impegniToggleText: { color: colors.gold, fontWeight: '700', fontSize: Font.small },
-    ctaCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-    ctaIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-    ctaTitle: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
   });
 }

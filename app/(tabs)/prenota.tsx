@@ -6,14 +6,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../../lib/auth';
 import {
-  getCampi, getCentri, getPartiteGiocatore, getPrenotazioniGiorno, creaPrenotazione,
+  getCampi, getCentri, getPrenotazioniGiorno, getPrenotazioniGiornoGiocatore, creaPrenotazione,
   centriPreferiti, toggleCentroPreferito, getGiocatori, getRanking, getAmici,
 } from '../../lib/api';
 import { avvisa } from '../../lib/avviso';
 import { orariSlots } from '../../lib/orari';
 import { calcPrezzoCampo } from '../../lib/prezziCampi';
+import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, H1, H2, IconBadge, Muted, Button, Avatar, Input } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
+import { useSport } from '../../lib/sport';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { Campo, Centro, Giocatore, Prenotazione } from '../../types/models';
 
@@ -60,6 +62,7 @@ export default function Prenota() {
   const params = useLocalSearchParams<{ data?: string }>();
   const { me, demoMode } = useAuth();
   const { colors, glass, scheme } = useTheme();
+  const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const [dataISO, setDataISO] = useState<string | null>(params.data ?? null);
@@ -110,9 +113,7 @@ export default function Prenota() {
   // ---- prenota: sport → orario aggregato → campo → conferma ----
   const [campi, setCampi] = useState<Campo[]>([]);
   const [occupati, setOccupati] = useState<Prenotazione[]>([]);
-  const [sportSel, setSportSel] = useState<string | null>(null);
-  const [mostraAltriSport, setMostraAltriSport] = useState(false);
-  const [storicoSport, setStoricoSport] = useState<Prenotazione[]>([]);
+  const [impegniGiocatore, setImpegniGiocatore] = useState<Prenotazione[]>([]);
   const [slotSel, setSlotSel] = useState<string | null>(null);
   const [campoSel, setCampoSel] = useState<Campo | null>(null);
   const [saving, setSaving] = useState(false);
@@ -120,34 +121,12 @@ export default function Prenota() {
   useEffect(() => {
     if (!centroSel) { setCampi([]); return; }
     getCampi(centroSel.id).then(setCampi);
-    setSportSel(null); setMostraAltriSport(false);
   }, [centroSel]);
 
-  // Storico partite: serve solo a stimare lo sport prenotato più spesso
-  // quando il giocatore ne pratica più di uno (vedi sportDefault sotto).
-  useEffect(() => { if (me) getPartiteGiocatore(me.id).then(setStoricoSport); }, [me]);
-
-  // Sport attivi per il giocatore in QUESTO centro: solo quelli che pratica
-  // E che il centro offre davvero — "altri sport" mostra il resto
-  // dell'offerta del centro, non un elenco fisso. Un solo sport praticato
-  // (qui) → quello è il default; più di uno → il più prenotato in assoluto
-  // tra quelli praticati, sugli altri si sceglie a mano (fix utente esplicito).
-  const sportGiocatore = (me?.sport_preferiti ?? []).filter((sp) => (centroSel?.sport_attivi ?? []).includes(sp));
-  const sportAltri = (centroSel?.sport_attivi ?? []).filter((sp) => !sportGiocatore.includes(sp));
-
-  useEffect(() => {
-    if (sportSel !== null || !centroSel) return;
-    if (sportGiocatore.length >= 1) {
-      const conteggi = new Map<string, number>();
-      for (const p of storicoSport) { const sp = p.campo?.sport; if (sp) conteggi.set(sp, (conteggi.get(sp) ?? 0) + 1); }
-      const scelto = [...sportGiocatore].sort((a, b) => (conteggi.get(b) ?? 0) - (conteggi.get(a) ?? 0))[0];
-      setSportSel(scelto);
-    } else if (centroSel.sport_attivi.length > 0) {
-      setSportSel(centroSel.sport_attivi[0]);
-    }
-  }, [centroSel, storicoSport, sportSel, sportGiocatore.join(',')]);
-
-  const campiSport = useMemo(() => campi.filter((c) => c.sport === sportSel), [campi, sportSel]);
+  // Sport globale scelto nell'header: qui si prenotano solo campi di quello
+  // sport, non serve più una scelta locale (fix utente esplicito — "il
+  // giocatore prenoterà i campi dello sport selezionato").
+  const campiSport = useMemo(() => campi.filter((c) => c.sport === sportAttivo), [campi, sportAttivo]);
 
   const loadOccupati = useCallback(async () => {
     if (!dataISO || campi.length === 0) { setOccupati([]); return; }
@@ -155,7 +134,31 @@ export default function Prenota() {
     setOccupati(rows);
   }, [campi, dataISO]);
   useEffect(() => { loadOccupati(); }, [loadOccupati]);
-  useEffect(() => { setSlotSel(null); setCampoSel(null); }, [sportSel, dataISO]);
+
+  // Impegni del giocatore quel giorno su QUALSIASI campo/sport/centro: un
+  // conflitto qui blocca il tentativo di prenotare prima ancora di arrivare
+  // alla conferma, non solo sullo stesso campo (fix utente esplicito — "se
+  // ho una prenotazione per uno sport non devo poter fare una prenotazione
+  // che si accavalli alla prima per qualsiasi sport"). Il backend rifiuta
+  // comunque la sovrapposizione a prescindere (_valida_conflitto_giocatori):
+  // questo è solo per non far scoprire il conflitto solo al "Conferma".
+  useEffect(() => {
+    if (!dataISO || !me) { setImpegniGiocatore([]); return; }
+    getPrenotazioniGiornoGiocatore(me.id, dataISO).then(setImpegniGiocatore);
+  }, [dataISO, me]);
+
+  const giocatoreImpegnato = useCallback((slot: string, durata: number) => {
+    const inizioSlot = toMin(slot);
+    const fineSlot = inizioSlot + durata;
+    return impegniGiocatore.some((p) => {
+      if (!p.inizio || !p.fine) return false;
+      const inizioEsistente = toMin(p.inizio.slice(0, 5));
+      const fineEsistente = toMin(p.fine.slice(0, 5));
+      return inizioSlot < fineEsistente && fineSlot > inizioEsistente;
+    });
+  }, [impegniGiocatore]);
+
+  useEffect(() => { setSlotSel(null); setCampoSel(null); }, [sportAttivo, dataISO]);
 
   const slots = useMemo(() => (centroSel && dataISO ? orariSlots(centroSel, dataISO) : []), [centroSel, dataISO]);
   // I passati non si mostrano proprio (fix utente esplicito) — non ricalcolato
@@ -172,6 +175,7 @@ export default function Prenota() {
     campiSport.filter((c) => {
       const inizioSlot = toMin(slot);
       const fineSlot = inizioSlot + durataCampo(c);
+      if (giocatoreImpegnato(slot, durataCampo(c))) return false;
       return !occupati.some((p) => {
         if (p.campo_id !== c.id || !p.inizio || !p.fine) return false;
         const inizioEsistente = toMin(p.inizio.slice(0, 5));
@@ -179,7 +183,7 @@ export default function Prenota() {
         return inizioSlot < fineEsistente && fineSlot > inizioEsistente;
       });
     }),
-    [campiSport, occupati]);
+    [campiSport, occupati, giocatoreImpegnato]);
 
   // ---- invita giocatori: stessa identica logica di ricerca/suggerimento
   // del gestionale (src/routes/+page.svelte, picker della "Nuova
@@ -199,8 +203,8 @@ export default function Prenota() {
 
   useEffect(() => {
     getGiocatori().then(setTuttiGiocatori);
-    getRanking().then((righe) => setRankingMap(new Map(righe.map((r) => [r.giocatore_id, r.ranking]))));
-  }, []);
+    getRanking(sportAttivo).then((righe) => setRankingMap(new Map(righe.map((r) => [r.giocatore_id, r.ranking]))));
+  }, [sportAttivo]);
   useEffect(() => {
     if (!me) return;
     getAmici(me.id).then((righe) => setAmici(righe.map((a) => a.amico).filter((g): g is Giocatore => Boolean(g))));
@@ -217,7 +221,7 @@ export default function Prenota() {
   }, [queryInvita, tuttiGiocatori, invitati, me]);
 
   const suggeritiEquilibrio = useMemo(() => {
-    if (queryInvita.trim() || sportSel !== 'Padel' || invitati.length === 0 || !me) return [];
+    if (queryInvita.trim() || sportAttivo !== 'Padel' || invitati.length === 0 || !me) return [];
     const scelti = [me, ...invitati];
     const media = scelti.reduce((s2, g) => s2 + (rankingMap.get(g.id) ?? 0), 0) / scelti.length;
     const esclusi = new Set(scelti.map((g) => g.id));
@@ -230,7 +234,7 @@ export default function Prenota() {
       .sort((a, b) => a.diff - b.diff)
       .slice(0, 5)
       .map((x) => x.g);
-  }, [queryInvita, sportSel, invitati, me, tuttiGiocatori, rankingMap]);
+  }, [queryInvita, sportAttivo, invitati, me, tuttiGiocatori, rankingMap]);
 
   const amiciDisponibili = useMemo(() => {
     const esclusi = new Set([me?.id, ...invitati.map((g) => g.id)]);
@@ -251,6 +255,11 @@ export default function Prenota() {
 
   const tapSlot = (slot: string) => {
     if (campiLiberi(slot).length === 0) {
+      const durata = durataCampo(campiSport[0] ?? null);
+      if (giocatoreImpegnato(slot, durata)) {
+        avvisa('Hai già un impegno', 'In questo orario hai già un\'altra prenotazione (anche per uno sport diverso): non puoi giocare due partite in contemporanea.');
+        return;
+      }
       avvisa('Nessuna disponibilità', 'Non ci sono campi liberi in questo orario in questo centro. Vuoi vedere le disponibilità in altri centri?', [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Cambia centro', onPress: () => { setCentroSel(null); setFase('centro'); } },
@@ -286,6 +295,7 @@ export default function Prenota() {
   if (fase === 'giorno') {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
+        <AppHeader />
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
           <H1>Prenota un campo</H1>
           <Muted style={{ marginBottom: Spacing.lg }}>Scegli il giorno in cui vuoi giocare.</Muted>
@@ -311,6 +321,7 @@ export default function Prenota() {
   if (fase === 'centro') {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
+        <AppHeader />
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
           <H1>Prenota un campo</H1>
           <Pressable onPress={() => setFase('giorno')}>
@@ -367,6 +378,7 @@ export default function Prenota() {
   // posto compare solo "Scegli il campo", con una freccia per tornare indietro.
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <AppHeader />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {!slotSel ? (
           <>
@@ -384,27 +396,13 @@ export default function Prenota() {
                 <Text style={s.pillText} numberOfLines={1}>{centroSel?.nome}</Text>
                 <Ionicons name="chevron-down" size={12} color={colors.slate} />
               </Pressable>
+              <View style={s.pill}>
+                <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
+                <Ionicons name="tennisball-outline" size={14} color={colors.navyDeep} />
+                <Text style={s.pillText} numberOfLines={1}>{sportAttivo}</Text>
+              </View>
             </View>
-
-            {centroSel.sport_attivi.length > 1 && (
-              <>
-                <View style={s.filtriRow}>
-                  {(sportGiocatore.length > 0 ? sportGiocatore : centroSel.sport_attivi).map((sp) => (
-                    <Chip key={sp} label={sp} active={sportSel === sp} onPress={() => setSportSel(sp)} />
-                  ))}
-                  {sportGiocatore.length > 0 && sportAltri.length > 0 && (
-                    <Chip label="Altri sport" active={mostraAltriSport} onPress={() => setMostraAltriSport((v) => !v)} />
-                  )}
-                </View>
-                {mostraAltriSport && sportAltri.length > 0 && (
-                  <View style={[s.filtriRow, { marginBottom: Spacing.md }]}>
-                    {sportAltri.map((sp) => (
-                      <Chip key={sp} label={sp} active={sportSel === sp} onPress={() => { setSportSel(sp); setMostraAltriSport(false); }} />
-                    ))}
-                  </View>
-                )}
-              </>
-            )}
 
             <H2 style={{ marginBottom: Spacing.md }}>Orari disponibili</H2>
             {campi.length === 0 ? (
@@ -420,10 +418,11 @@ export default function Prenota() {
                 {slotsVisibili.map((slot) => {
                   const nLiberi = campiLiberi(slot).length;
                   const occ = nLiberi === 0;
+                  const mioImpegno = occ && giocatoreImpegnato(slot, durataCampo(campiSport[0] ?? null));
                   return (
                     <Pressable key={slot} onPress={() => tapSlot(slot)} style={[s.slot, occ && s.slotOcc]}>
                       <Text style={[s.slotText, occ && s.slotTextOcc]}>{slot}</Text>
-                      <Text style={[s.slotPrezzo, occ && s.slotTextOcc]}>{occ ? 'pieno' : `${nLiberi} liberi`}</Text>
+                      <Text style={[s.slotPrezzo, occ && s.slotTextOcc]}>{mioImpegno ? 'già impegnato' : occ ? 'pieno' : `${nLiberi} liberi`}</Text>
                     </Pressable>
                   );
                 })}
@@ -504,7 +503,7 @@ export default function Prenota() {
                               <Text style={s.campoNome}>{g.nome} {g.cognome}</Text>
                               {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
                             </View>
-                            {sportSel === 'Padel' && rankingMap.has(g.id) && <Text style={s.rankingBadge}>{rankingMap.get(g.id)!.toFixed(2)}</Text>}
+                            {sportAttivo === 'Padel' && rankingMap.has(g.id) && <Text style={s.rankingBadge}>{rankingMap.get(g.id)!.toFixed(2)}</Text>}
                             <Ionicons name="add-circle" size={24} color={colors.gold} />
                           </Card>
                         </Pressable>
@@ -545,7 +544,7 @@ export default function Prenota() {
                                 <Text style={s.campoNome}>{g.nome} {g.cognome}</Text>
                                 {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
                               </View>
-                              {sportSel === 'Padel' && rankingMap.has(g.id) && <Text style={s.rankingBadge}>{rankingMap.get(g.id)!.toFixed(2)}</Text>}
+                              {sportAttivo === 'Padel' && rankingMap.has(g.id) && <Text style={s.rankingBadge}>{rankingMap.get(g.id)!.toFixed(2)}</Text>}
                               <Ionicons name="add-circle" size={24} color={colors.gold} />
                             </Card>
                           </Pressable>

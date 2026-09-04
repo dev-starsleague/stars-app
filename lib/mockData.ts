@@ -19,8 +19,12 @@ export const mockCentro: Centro = {
 };
 
 export const mockShopProdotti = [
-  { id: 'sp1', centro_id: CENTRO_ID, nome: 'Grip Padel Pro', prezzo_coin: 15, prezzo_euro: null, descrizione: 'Grip antiscivolo, ricambio racchetta', immagine_url: null, stock: 20, varianti: [], attivo: true, condizione: 'nuovo' as const },
-  { id: 'sp2', centro_id: CENTRO_ID, nome: 'T-Shirt Stars League', prezzo_coin: 40, prezzo_euro: 12, descrizione: 'Maglietta tecnica del centro', immagine_url: null, stock: 8, varianti: [], attivo: true, condizione: 'nuovo' as const },
+  { id: 'sp1', centro_id: CENTRO_ID, nome: 'Grip Padel Pro', prezzo_coin: 15, prezzo_euro: null, descrizione: 'Grip antiscivolo, ricambio racchetta', immagine_url: null, stock: 20, varianti: [], attivo: true, condizione: 'nuovo' as const, sport: 'Padel', sponsorizzato: true, sponsorizzato_dal: inDays(0), sponsorizzato_fino: inDays(7), sponsorizzato_giorni: 7, sponsorizzato_costo_totale: 5 },
+  { id: 'sp2', centro_id: CENTRO_ID, nome: 'T-Shirt Stars League', prezzo_coin: 40, prezzo_euro: 12, descrizione: 'Maglietta tecnica del centro', immagine_url: null, stock: 8, varianti: [], attivo: true, condizione: 'nuovo' as const, sport: null, sponsorizzato: false, sponsorizzato_dal: null, sponsorizzato_fino: null, sponsorizzato_giorni: null, sponsorizzato_costo_totale: null },
+];
+
+export const mockAbbonamentiTemplate = [
+  { id: 'ab1', centro_id: CENTRO_ID, nome: '10 ingressi Padel', tipo: 'campo' as const, quantita_inclusa: 10, prezzo_coin: 350, prezzo_euro: 90, validita_giorni: 180, coach_id: null, sport: 'Padel', attivo: true, sponsorizzato: false, sponsorizzato_dal: null, sponsorizzato_fino: null, sponsorizzato_giorni: null, sponsorizzato_costo_totale: null },
 ];
 
 export const mockCampi: Campo[] = [
@@ -84,16 +88,16 @@ export const mockClassifica: ClassificaMensile[] = [
   cm('a0000000-0000-0000-0000-000000000007', 'F', 63, 10, 5),
 ];
 function cm(giocatore_id: string, genere: 'M' | 'F', punti: number, partite: number, vittorie: number): ClassificaMensile {
-  return { id: 'cm-' + giocatore_id, centro_id: CENTRO_ID, giocatore_id, mese: meseCorrente, genere, punti, partite, vittorie,
+  return { id: 'cm-' + giocatore_id, centro_id: CENTRO_ID, giocatore_id, mese: meseCorrente, sport: 'Padel', genere, punti, partite, vittorie,
     giocatore: mockGiocatori.find((g) => g.id === giocatore_id) };
 }
 
 function inDays(n: number): string { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
 export const mockEventi: EventoCustom[] = [
-  { id: 'ev1', centro_id: CENTRO_ID, nome: 'Torneo di Primavera', descrizione: 'Girone all\'italiana + eliminazione diretta. Categoria mista aperta a tutti.', divisione: 'misto', stato: 'ready', unita_competitiva: 'coppia_fissa', min_partecipanti: 8, max_partecipanti: 16, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(10), data_evento: inDays(14), iscritti_count: 6 },
-  { id: 'ev2', centro_id: CENTRO_ID, nome: 'Americano del Venerdì', descrizione: 'Formula americano, coppie a rotazione. Serata a premi.', divisione: 'misto', stato: 'ready', unita_competitiva: 'coppia_fissa', min_partecipanti: 8, max_partecipanti: 24, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(2), data_evento: inDays(3), iscritti_count: 12 },
-  { id: 'ev3', centro_id: CENTRO_ID, nome: 'Open Maschile P1000', descrizione: 'Tabellone principale + consolazione.', divisione: 'maschile', stato: 'in_corso', unita_competitiva: 'coppia_fissa', min_partecipanti: 16, max_partecipanti: 32, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(-2), data_evento: inDays(-1), iscritti_count: 24 },
+  { id: 'ev1', centro_id: CENTRO_ID, nome: 'Torneo di Primavera', descrizione: 'Girone all\'italiana + eliminazione diretta. Categoria mista aperta a tutti.', divisione: 'misto', stato: 'ready', unita_competitiva: 'coppia_fissa', min_partecipanti: 8, max_partecipanti: 16, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(10), data_evento: inDays(14), in_evidenza: true, immagine_url: null, iscritti_count: 6 },
+  { id: 'ev2', centro_id: CENTRO_ID, nome: 'Americano del Venerdì', descrizione: 'Formula americano, coppie a rotazione. Serata a premi.', divisione: 'misto', stato: 'ready', unita_competitiva: 'coppia_fissa', min_partecipanti: 8, max_partecipanti: 24, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(2), data_evento: inDays(3), in_evidenza: false, immagine_url: null, iscritti_count: 12 },
+  { id: 'ev3', centro_id: CENTRO_ID, nome: 'Open Maschile P1000', descrizione: 'Tabellone principale + consolazione.', divisione: 'maschile', stato: 'in_corso', unita_competitiva: 'coppia_fissa', min_partecipanti: 16, max_partecipanti: 32, apertura_iscrizioni_at: null, chiusura_iscrizioni_at: inDays(-2), data_evento: inDays(-1), in_evidenza: false, immagine_url: null, iscritti_count: 24 },
 ];
 
 export function mockPrenotazioni(): Prenotazione[] {

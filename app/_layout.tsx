@@ -5,6 +5,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { ThemeProvider, useTheme } from '../lib/theme';
+import { SportProvider } from '../lib/sport';
 import { AlertHost } from '../lib/avviso';
 import { PhoneFrame } from '../components/PhoneFrame';
 
@@ -33,16 +34,13 @@ function RootNav() {
   return (
     <>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      {/* Le schermate di dettaglio (amici, profilo giocatore, stars-coin,
+          ecc.) non sono più qui: vivono dentro (tabs) come Tabs.Screen
+          nascoste, così la navbar flottante resta visibile anche lì (fix
+          utente esplicito — vedi commento in (tabs)/_layout.tsx). */}
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="amici" options={{ presentation: 'card' }} />
-        <Stack.Screen name="modifica-profilo" options={{ presentation: 'card' }} />
-        <Stack.Screen name="giocatore/[id]" options={{ presentation: 'card' }} />
-        <Stack.Screen name="giorno/[data]" options={{ presentation: 'card' }} />
-        <Stack.Screen name="impegni" options={{ presentation: 'card' }} />
-        <Stack.Screen name="richiedi-valutazione" options={{ presentation: 'card' }} />
-        <Stack.Screen name="stars-coin" options={{ presentation: 'card' }} />
       </Stack>
       <AlertHost />
     </>
@@ -55,7 +53,9 @@ export default function Layout() {
       <ThemeProvider>
         <PhoneFrame>
           <AuthProvider>
-            <RootNav />
+            <SportProvider>
+              <RootNav />
+            </SportProvider>
           </AuthProvider>
         </PhoneFrame>
       </ThemeProvider>

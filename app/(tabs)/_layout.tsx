@@ -123,6 +123,21 @@ export default function TabsLayout() {
       <Tabs.Screen name="stars" options={{ title: 'Stars' }} />
       <Tabs.Screen name="profilo" options={{ title: 'Profilo', href: null }} />
       <Tabs.Screen name="prenota" options={{ href: null }} />
+      {/* Schermate "di dettaglio" raggiunte con router.push, non tab vere
+          (href:null) — stanno comunque DENTRO questo Tabs navigator (non
+          nello Stack radice come prima) così la navbar flottante resta
+          montata e visibile anche qui, non solo sulle 4 tab principali
+          (fix utente esplicito: "quando navigo nelle pagine devo sempre
+          vedere sia la navbar che l'header" — l'header lo aggiunge ogni
+          schermata da sé con <AppHeader/>, la navbar la eredita gratis
+          restando in questo stesso navigator). */}
+      <Tabs.Screen name="stars-coin" options={{ href: null }} />
+      <Tabs.Screen name="impegni" options={{ href: null }} />
+      <Tabs.Screen name="amici" options={{ href: null }} />
+      <Tabs.Screen name="modifica-profilo" options={{ href: null }} />
+      <Tabs.Screen name="richiedi-valutazione" options={{ href: null }} />
+      <Tabs.Screen name="giocatore/[id]" options={{ href: null }} />
+      <Tabs.Screen name="giorno/[data]" options={{ href: null }} />
     </Tabs>
   );
 }

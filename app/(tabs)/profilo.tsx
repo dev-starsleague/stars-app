@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,6 +8,7 @@ import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
+import { useSport } from '../../lib/sport';
 import {
   getCentro, getPartiteGiocatore, getRankingAttuale, getStoricoRanking, getTessera,
   caricaFotoProfilo, updateProfilo, haVinto,
@@ -46,14 +47,11 @@ export default function Profilo() {
   const { me, signOut, refreshMe } = useAuth();
   const router = useRouter();
   const { colors, glass, scheme } = useTheme();
+  const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors, glass), [colors, glass]);
   const [tab, setTab] = useState<TabP>('ranking');
 
   const [centro, setCentro] = useState<Centro | null>(null);
-  const [sport, setSport] = useState<string>('Padel');
-  const [sportModaleAperto, setSportModaleAperto] = useState(false);
-  const sportInizializzato = useRef(false);
-
   const [tessera, setTessera] = useState<Tessera | null>(null);
   const [fotoLocale, setFotoLocale] = useState<string | null>(null);
   const [caricandoFoto, setCaricandoFoto] = useState(false);
@@ -74,23 +72,20 @@ export default function Profilo() {
     setCentro(c);
     setTessera(te);
     setPartiteTutte(pr);
-    if (!sportInizializzato.current) {
-      const preferito = me.sport_preferiti?.find((s) => c.sport_attivi.includes(s));
-      setSport(preferito ?? c.sport_attivi[0] ?? 'Padel');
-      sportInizializzato.current = true;
-    }
   }, [me]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Ranking/storico dipendono dallo sport selezionato: si ricaricano anche
-  // quando cambia lo sport, non solo al focus della schermata.
+  // Sport globale dell'header (fix utente esplicito): ranking/storico/
+  // partite di questa schermata seguono sportAttivo, non più una scelta
+  // locale — si ricaricano anche quando cambia dall'header, non solo al
+  // focus della schermata.
   useEffect(() => {
     if (!me) return;
     setCaricandoRanking(true);
-    Promise.all([getRankingAttuale(me.id, sport), getStoricoRanking(me.id, sport)])
+    Promise.all([getRankingAttuale(me.id, sportAttivo), getStoricoRanking(me.id, sportAttivo)])
       .then(([r, st]) => { setRankingAttuale(r); setStorico(st); })
       .finally(() => setCaricandoRanking(false));
-  }, [me, sport]);
+  }, [me, sportAttivo]);
 
   const nome = `${me?.nome ?? ''} ${me?.cognome ?? ''}`.trim() || 'Giocatore';
   const avatarUri = fotoLocale ?? (me?.avatar_url ? (me.avatar_url.startsWith('http') ? me.avatar_url : apiUrl(me.avatar_url)) : null);
@@ -115,7 +110,7 @@ export default function Profilo() {
     setCaricandoFoto(false);
   };
 
-  const partiteSport = partiteTutte.filter((p) => (p.campo?.sport ?? 'Padel') === sport);
+  const partiteSport = partiteTutte.filter((p) => (p.campo?.sport ?? 'Padel') === sportAttivo);
   const meseNavIso = `${meseNav.getFullYear()}-${String(meseNav.getMonth() + 1).padStart(2, '0')}`;
   const nomeMeseNav = meseNav.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
   const partiteFiltrate = partiteSport.filter((p) => {
@@ -169,16 +164,6 @@ export default function Profilo() {
           </View>
         </Card>
 
-        {/* Sport da visualizzare: sotto le info del giocatore, sopra i tab —
-            filtra Ranking e Partite qui sotto. */}
-        <Pressable style={s.sportBar} onPress={() => setSportModaleAperto(true)}>
-          <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
-          <Ionicons name="tennisball-outline" size={16} color={colors.navyDeep} />
-          <Text style={s.sportBarText}>{sport}</Text>
-          <Ionicons name="chevron-down" size={14} color={colors.slate} />
-        </Pressable>
-
         {/* Tab interne */}
         <Segmented
           value={tab}
@@ -194,7 +179,7 @@ export default function Profilo() {
 
         {tab === 'ranking' && (
           <Card style={s.panel}>
-            <Text style={s.panelTitle}>Il tuo ranking — {sport}</Text>
+            <Text style={s.panelTitle}>Il tuo ranking — {sportAttivo}</Text>
             {caricandoRanking ? (
               <ActivityIndicator color={colors.gold} style={{ marginVertical: Spacing.xl }} />
             ) : rankingAttuale ? (
@@ -218,7 +203,7 @@ export default function Profilo() {
                 <Muted style={{ textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
                   Il tuo ranking si aggiorna automaticamente dopo ogni partita competitiva. Prima però dobbiamo valutare il tuo livello di gioco.
                 </Muted>
-                <Pressable style={s.scopriBtn} onPress={() => router.push({ pathname: '/richiedi-valutazione', params: { sport } })}>
+                <Pressable style={s.scopriBtn} onPress={() => router.push({ pathname: '/richiedi-valutazione', params: { sport: sportAttivo } })}>
                   <Ionicons name="trending-up" size={16} color={colors.navyDeep} />
                   <Text style={s.scopriText}>Scopri il tuo ranking</Text>
                 </Pressable>
@@ -315,23 +300,6 @@ export default function Profilo() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
-
-      {/* Selettore sport: uno alla volta, dagli sport attivi del centro */}
-      <Modal visible={sportModaleAperto} transparent animationType="fade" onRequestClose={() => setSportModaleAperto(false)}>
-        <Pressable style={s.modaleSfondo} onPress={() => setSportModaleAperto(false)}>
-          <View style={s.modaleBox}>
-            <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
-            <Text style={s.modaleTitolo}>Sport da visualizzare</Text>
-            {(centro?.sport_attivi ?? ['Padel']).map((sp) => (
-              <Pressable key={sp} style={s.modaleRiga} onPress={() => { setSport(sp); setSportModaleAperto(false); }}>
-                <Ionicons name={sp === sport ? 'radio-button-on' : 'radio-button-off'} size={20} color={sp === sport ? colors.gold : colors.slate} />
-                <Text style={s.modaleRigaText}>{sp}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -354,8 +322,6 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     headStats: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
     hStat: { flex: 1, backgroundColor: glass.strongBg, borderRadius: Radius.md, padding: Spacing.md, alignItems: 'center', gap: 3 },
     hStatValue: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3 },
-    sportBar: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.md, borderWidth: 1, borderColor: glass.regularBorder, overflow: 'hidden' },
-    sportBarText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small },
     panel: { marginTop: Spacing.md },
     panelTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.md },
     rankRow: { flexDirection: 'row', gap: Spacing.md },
@@ -388,10 +354,5 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     footRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
     footBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: Radius.md, borderWidth: 1, borderColor: glass.regularBorder, paddingVertical: Spacing.lg, overflow: 'hidden' },
     footText: { color: colors.navyDeep, fontWeight: '800' },
-    modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
-    modaleBox: { width: '100%', maxWidth: 340, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: glass.regularBorder },
-    modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
-    modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
-    modaleRigaText: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '600' },
   });
 }

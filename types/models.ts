@@ -68,6 +68,40 @@ export interface ShopProdotto {
   varianti: { nome: string; stock: number }[];
   attivo: boolean;
   condizione: 'nuovo' | 'usato';
+  // sport a cui è vincolato il prodotto; null = qualsiasi sport (fix utente
+  // esplicito: lo shop deve essere filtrato per sport come il resto
+  // dell'app, non solo per centro — vedi useSport()/sportAttivo).
+  sport: string | null;
+  // sponsorizzato dal centro (a pagamento, gestito dal gestionale): compare
+  // nel carosello ADV della Home per sponsorizzato_giorni giorni, da
+  // sponsorizzato_dal a sponsorizzato_fino (fix utente esplicito: "bisogna
+  // scegliere per quanto tempo fare la sponsorizzata") — "attivo davvero" è
+  // sempre `sponsorizzato && sponsorizzato_fino >= oggi`, mai il solo flag,
+  // vedi getProdottiSponsorizzati().
+  sponsorizzato: boolean;
+  sponsorizzato_dal: string | null;
+  sponsorizzato_fino: string | null;
+  sponsorizzato_giorni: number | null;
+  sponsorizzato_costo_totale: number | null;
+}
+
+export interface AbbonamentoTemplate {
+  id: string;
+  centro_id: string;
+  nome: string;
+  tipo: 'lezioni' | 'campo';
+  quantita_inclusa: number;
+  prezzo_coin: number;
+  prezzo_euro: number | null;
+  validita_giorni: number | null;
+  coach_id: string | null;
+  sport: string | null; // null = qualsiasi sport
+  attivo: boolean;
+  sponsorizzato: boolean;
+  sponsorizzato_dal: string | null;
+  sponsorizzato_fino: string | null;
+  sponsorizzato_giorni: number | null;
+  sponsorizzato_costo_totale: number | null;
 }
 
 export interface Campo {
@@ -188,6 +222,7 @@ export interface ClassificaMensile {
   centro_id: string;
   giocatore_id: string;
   mese: string; // YYYY-MM-01
+  sport: string;
   genere: Genere;
   punti: number;
   partite: number;
@@ -210,6 +245,9 @@ export interface EventoCustom {
   apertura_iscrizioni_at: string | null;
   chiusura_iscrizioni_at: string | null;
   data_evento?: string | null;
+  // promozione nel carosello ADV della Home (fix utente esplicito)
+  in_evidenza: boolean;
+  immagine_url: string | null;
   // conteggi lato client
   iscritti_count?: number;
   iscritto?: boolean;
