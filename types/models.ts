@@ -217,6 +217,75 @@ export interface EventoStorico {
   motivazione?: string | null;
 }
 
+// ---------- Carosello Home: slide personali (fix utente esplicito,
+// "vita sportiva recente del giocatore") — strutture pulite pensate per
+// essere alimentate da un endpoint di aggregazione dedicato in futuro
+// (oggi calcolate lato client dalle prenotazioni reali, vedi lib/api.ts
+// getAndamentoRecente/getInsightsSociali/getVariazioneRankingGlobale).
+// Ogni struttura è SEMPRE "abbastanza dati sì/no" esplicito (mai 0/null
+// silenziosi): il chiamante mostra un messaggio contestuale quando manca.
+
+/** Prossima partita reale in calendario (qualunque sport passato) — usata
+ *  per la frase contestuale della slide 2 (fix utente esplicito: "se il
+ *  giocatore ha una serie positiva ed ha una partita a breve deve dire
+ *  qualcosa a riguardo"). null = nessuna partita futura in programma. */
+export interface ProssimaPartita {
+  data: string; // YYYY-MM-DD
+  giorni: number; // 0 = oggi, 1 = domani, ecc.
+}
+
+/** Variazione di posizione nel ranking nazionale negli ultimi N giorni. */
+export interface VariazioneRanking {
+  posizioneAttuale: number;
+  totale: number;
+  // null = non ricostruibile (es. il giocatore non era ancora in
+  // classifica N giorni fa) — il chiamante mostra solo la posizione
+  // attuale, senza inventare una variazione.
+  posizionePrecedente: number | null;
+  giorni: number;
+}
+
+/** Rendimento nelle ultime N partite giocate (qualunque sport/centro). */
+export interface AndamentoRecente {
+  finestra: number; // quante partite considerate al massimo (N richiesto)
+  disputate: number; // quante ne ha davvero giocate (<= finestra)
+  vinte: number;
+  perse: number;
+  winRatePercento: number | null; // null se disputate === 0
+  streak: { tipo: 'vittorie' | 'sconfitte'; conteggio: number } | null; // null se < 2 di fila
+  // Esito delle ultime partite, la più recente per prima (true = vittoria) —
+  // fino a 10, per il "form guide" della slide 2 (fix utente esplicito:
+  // pallini 🟢/🔴 dalla meno recente alla più recente).
+  formaRecente: boolean[];
+  // Set vinti/persi nelle stesse partite considerate sopra (fix utente
+  // esplicito: "Set vinti"/"Set persi" al posto di "Punti fatti/subiti").
+  setVinti: number;
+  setPersi: number;
+  // Andamento: confronta la percentuale di vittorie tra le 5 partite più
+  // vecchie e le 5 più recenti (delle ultime 10) — null se ci sono troppo
+  // poche partite per un confronto sensato (fix utente esplicito).
+  trend: 'crescita' | 'calo' | 'stabile' | null;
+}
+
+/** Un "insight" su un altro giocatore (compagno/nemesi/avversario preferito). */
+export interface InsightAvversario {
+  giocatoreId: string;
+  nome: string;
+  avatarUrl: string | null;
+  partiteInsieme: number; // partite in comune (come compagni o avversari, a seconda del blocco)
+  vittorie: number; // vittorie MIE in quelle partite
+  sconfitte: number; // sconfitte MIE in quelle partite
+}
+
+/** I 3 blocchi "social" della slide 3 — ciascuno null quando non ci sono
+ *  ancora abbastanza partite in comune con qualcuno per essere significativo
+ *  (soglia minima applicata da getInsightsSociali, non dalla UI). */
+export interface InsightsSociali {
+  compagnoPreferito: InsightAvversario | null;
+  nemesi: InsightAvversario | null;
+  avversarioPreferito: InsightAvversario | null;
+}
+
 export interface ClassificaMensile {
   id: string;
   centro_id: string;

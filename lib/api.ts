@@ -14,6 +14,7 @@ import type {
   Campo, Centro, ClassificaMensile, EventoCustom, EventoStorico, Giocatore,
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
+  VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -255,6 +256,173 @@ export function haVinto(p: Prenotazione, giocatoreId: string): boolean | null {
   return p.risultato.vincitore === 'A' ? inSquadraA : !inSquadraA;
 }
 
+// Sotto questa soglia un dato "in comune con qualcuno" non è ancora
+// significativo (rischia di eleggere "nemesi" chi si è affrontato una volta
+// sola) — il chiamante mostra un messaggio contestuale finché non è
+// raggiunta, mai uno 0/percentuale finto (fix utente esplicito: carosello
+// Home, slide "social").
+const MIN_PARTITE_INSIEME = 3;
+
+/** Rendimento nelle ultime `finestra` partite giocate (qualunque sport passato,
+ *  lezioni escluse) — carosello Home, slide "vita sportiva recente" (fix
+ *  utente esplicito). `disputate` può essere < finestra se il giocatore non
+ *  ne ha ancora giocate abbastanza: il chiamante mostra un messaggio
+ *  contestuale quando disputate===0, mai "0 partite"/"0%". */
+// Quanti set ha vinto/perso il giocatore in UNA partita — stessa
+// individuazione di squadra di haVinto (squadre esplicite, altrimenti
+// ordine posizionale in giocatori_extra), applicata a ogni singolo set
+// invece che solo all'esito finale. null se la partita non ha set
+// registrati (es. solo il vincitore, senza punteggio).
+function setVintiPersiPartita(p: Prenotazione, giocatoreId: string): { vinti: number; persi: number } | null {
+  if (!p.risultato?.sets?.length) return null;
+  const meta = Math.ceil(p.giocatori_extra.length / 2);
+  const squadraA = p.squadre?.a ?? p.giocatori_extra.slice(0, meta);
+  const inA = squadraA.includes(giocatoreId);
+  let vinti = 0, persi = 0;
+  for (const set of p.risultato.sets) {
+    const miei = inA ? set.a : set.b;
+    const avv = inA ? set.b : set.a;
+    if (miei > avv) vinti++; else if (avv > miei) persi++;
+  }
+  return { vinti, persi };
+}
+
+/** Rendimento nelle ultime `finestra` partite giocate (qualunque sport passato,
+ *  lezioni escluse) — carosello Home, slide "vita sportiva recente" (fix
+ *  utente esplicito). `disputate` può essere < finestra se il giocatore non
+ *  ne ha ancora giocate abbastanza: il chiamante mostra un messaggio
+ *  contestuale quando disputate===0, mai "0 partite"/"0%". */
+export async function getAndamentoRecente(giocatoreId: string, sport: string, finestra: number = 10): Promise<AndamentoRecente> {
+  const vuoto: AndamentoRecente = { finestra, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], setVinti: 0, setPersi: 0, trend: null };
+  if (isMock()) return vuoto;
+  const partite = await getPartiteGiocatore(giocatoreId); // già ordinate dal più recente
+  const rilevanti = partite.filter((p) => p.tipo !== 'lezione' && p.campo?.sport === sport && p.risultato?.vincitore);
+  const esiti: boolean[] = [];
+  const finestraPartite: Prenotazione[] = [];
+  for (const p of rilevanti) {
+    const v = haVinto(p, giocatoreId);
+    if (v === null) continue;
+    esiti.push(v);
+    finestraPartite.push(p);
+    if (esiti.length >= finestra) break;
+  }
+  const disputate = esiti.length;
+  if (disputate === 0) return vuoto;
+  const vinte = esiti.filter(Boolean).length;
+  // Streak: quante partite consecutive dalla più recente hanno lo stesso
+  // esito di quella più recente — sotto 2 non è una "striscia", solo l'ultimo
+  // risultato (non abbastanza interessante da raccontare come tale).
+  let streakCount = 1;
+  while (streakCount < esiti.length && esiti[streakCount] === esiti[0]) streakCount++;
+  const streak = streakCount >= 2 ? { tipo: esiti[0] ? ('vittorie' as const) : ('sconfitte' as const), conteggio: streakCount } : null;
+
+  let setVinti = 0, setPersi = 0;
+  for (const p of finestraPartite) {
+    const esitoSet = setVintiPersiPartita(p, giocatoreId);
+    if (esitoSet) { setVinti += esitoSet.vinti; setPersi += esitoSet.persi; }
+  }
+
+  // Andamento (fix utente esplicito): confronta la % di vittorie tra le 5
+  // partite più vecchie e le 5 più recenti, delle ultime 10 — con meno di
+  // 10 partite si dividono a metà quelle disponibili; sotto le 4 partite il
+  // confronto non è abbastanza significativo (2 contro 2 al minimo).
+  let trend: AndamentoRecente['trend'] = null;
+  if (disputate >= 4) {
+    const metaSize = Math.floor(disputate / 2);
+    const piuRecenti = esiti.slice(0, metaSize);
+    const piuVecchie = esiti.slice(disputate - metaSize);
+    const rateRecenti = Math.round((piuRecenti.filter(Boolean).length / piuRecenti.length) * 100);
+    const rateVecchie = Math.round((piuVecchie.filter(Boolean).length / piuVecchie.length) * 100);
+    trend = rateRecenti > rateVecchie ? 'crescita' : rateRecenti < rateVecchie ? 'calo' : 'stabile';
+  }
+
+  return {
+    finestra, disputate, vinte, perse: disputate - vinte, winRatePercento: Math.round((vinte / disputate) * 100), streak,
+    formaRecente: esiti.slice(0, 10), setVinti, setPersi, trend,
+  };
+}
+
+/** Prima partita futura in calendario per lo sport passato (qualunque
+ *  centro, esclude le lezioni) — usata per la frase contestuale della slide
+ *  2 del carosello Home (fix utente esplicito: "se ha una serie positiva ed
+ *  ha una partita a breve deve dire qualcosa a riguardo"). null = nessuna
+ *  partita futura in programma per quello sport. */
+export async function getProssimaPartita(giocatoreId: string, sport: string): Promise<ProssimaPartita | null> {
+  if (isMock()) return null;
+  const partite = await getPartiteGiocatore(giocatoreId);
+  const oggi = new Date().toISOString().slice(0, 10);
+  const future = partite.filter((p) => p.tipo !== 'lezione' && p.campo?.sport === sport && (p.data ?? '') >= oggi);
+  if (future.length === 0) return null;
+  const prossima = future.reduce((min, p) => ((p.data as string) < (min.data as string) ? p : min));
+  const giorni = Math.round((new Date(prossima.data as string).getTime() - new Date(oggi).getTime()) / 86400000);
+  return { data: prossima.data as string, giorni: Math.max(0, giorni) };
+}
+
+/** I 3 "insight" social della slide 3 del carosello Home: compagno con cui
+ *  si è giocato di più, avversario contro cui si perde di più (nemesi) e
+ *  contro cui si vince di più (avversario preferito) — fix utente esplicito:
+ *  "voglio mostrare statistiche interessanti e curiose sulla vita del
+ *  giocatore... insight personali e divertenti, non statistiche
+ *  amministrative". Ogni blocco è indipendente: può risultare null (dati
+ *  insufficienti) anche quando gli altri due sono disponibili. */
+export async function getInsightsSociali(giocatoreId: string, sport: string): Promise<InsightsSociali> {
+  const vuoto: InsightsSociali = { compagnoPreferito: null, nemesi: null, avversarioPreferito: null };
+  if (isMock()) return vuoto;
+  const [partite, giocatori] = await Promise.all([getPartiteGiocatore(giocatoreId), getGiocatori()]);
+  const nomeById = new Map(giocatori.map((g) => [g.id, `${g.nome} ${g.cognome}`]));
+  const avatarById = new Map(giocatori.map((g) => [g.id, g.avatar_url ?? null]));
+  const rilevanti = partite.filter((p) => p.tipo !== 'lezione' && p.campo?.sport === sport && p.risultato?.vincitore);
+
+  type Aggregato = { partite: number; vittorie: number; sconfitte: number };
+  const compagni = new Map<string, Aggregato>();
+  const avversari = new Map<string, Aggregato>();
+  const incrementa = (mappa: Map<string, Aggregato>, id: string, vinta: boolean) => {
+    const riga = mappa.get(id) ?? { partite: 0, vittorie: 0, sconfitte: 0 };
+    riga.partite++;
+    if (vinta) riga.vittorie++; else riga.sconfitte++;
+    mappa.set(id, riga);
+  };
+
+  for (const p of rilevanti) {
+    const vinta = haVinto(p, giocatoreId);
+    if (vinta === null) continue;
+    const meta = Math.ceil(p.giocatori_extra.length / 2);
+    const squadraA = p.squadre?.a ?? p.giocatori_extra.slice(0, meta);
+    const squadraB = p.squadre?.b ?? p.giocatori_extra.slice(meta);
+    const inA = squadraA.includes(giocatoreId);
+    const miaSquadra = inA ? squadraA : squadraB;
+    const squadraAvversaria = inA ? squadraB : squadraA;
+    for (const id of miaSquadra) { if (id !== giocatoreId) incrementa(compagni, id, vinta); }
+    for (const id of squadraAvversaria) incrementa(avversari, id, vinta);
+  }
+
+  // Il "migliore" per un criterio, solo tra chi ha raggiunto la soglia
+  // minima di partite in comune — altrimenti null (dati insufficienti).
+  const migliore = (mappa: Map<string, Aggregato>, punteggio: (r: Aggregato) => number): InsightAvversario | null => {
+    let bestId: string | null = null;
+    let bestRiga: Aggregato | null = null;
+    for (const [id, riga] of mappa) {
+      if (riga.partite < MIN_PARTITE_INSIEME) continue;
+      if (!bestRiga || punteggio(riga) > punteggio(bestRiga)) { bestId = id; bestRiga = riga; }
+    }
+    if (!bestId || !bestRiga) return null;
+    return {
+      giocatoreId: bestId, nome: nomeById.get(bestId) ?? 'Giocatore', avatarUrl: avatarById.get(bestId) ?? null,
+      partiteInsieme: bestRiga.partite, vittorie: bestRiga.vittorie, sconfitte: bestRiga.sconfitte,
+    };
+  };
+
+  return {
+    // Compagno preferito: con cui si è giocato PIÙ partite insieme (non il
+    // più vincente — è "con chi giochi di più", tie-break sulle vittorie).
+    compagnoPreferito: migliore(compagni, (r) => r.partite * 1000 + r.vittorie),
+    // Nemesi: contro cui si perde di più.
+    nemesi: migliore(avversari, (r) => r.sconfitte),
+    // Avversario preferito: contro cui si vince di più.
+    avversarioPreferito: migliore(avversari, (r) => r.vittorie),
+  };
+}
+
 // ---------- Ranking ----------
 export async function getRanking(sport: string = 'Padel'): Promise<(RankingGiocatore & { giocatore?: Giocatore })[]> {
   if (isMock()) {
@@ -376,6 +544,71 @@ export async function posizioneRankingGlobale(giocatoreId: string, sport: string
   const posizione = pari.findIndex((r) => r.giocatore_id === giocatoreId);
   if (posizione < 0) return null;
   return { posizione: posizione + 1, totale: pari.length, valore: io.ranking };
+}
+
+/** Variazione della posizione nel ranking nazionale negli ultimi `giorni`
+ *  giorni — carosello Home, slide 1 (fix utente esplicito: "#147 → #129,
+ *  +18 posizioni"). Nessun nuovo endpoint/snapshot storico: si ricostruisce
+ *  il valore di ranking di OGNI giocatore N giorni fa partendo da quello
+ *  ATTUALE e "annullando" i delta di partite/correzioni avvenute dentro la
+ *  finestra (stessa aritmetica di getStoricoRanking, applicata all'intera
+ *  popolazione invece che a un solo giocatore — /match-ranking e
+ *  /ranking-override non filtrati per giocatore restituiscono già tutto il
+ *  necessario in una sola chiamata ciascuno). Se il giocatore stesso non ha
+ *  nessuna attività PRIMA del cutoff, la sua posizione "di N giorni fa" non
+ *  è mai esistita: si ritorna comunque la posizione attuale, ma con
+ *  posizionePrecedente=null (mai una variazione inventata). */
+export async function getVariazioneRankingGlobale(giocatoreId: string, sport: string, giorni: number = 30): Promise<VariazioneRanking | null> {
+  if (isMock()) return null;
+  const attuale = await posizioneRankingGlobale(giocatoreId, sport);
+  if (!attuale) return null;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - giorni);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  const [righe, { data: matches }, { data: overrides }] = await Promise.all([
+    getRanking(sport),
+    apiGet<MatchRanking[]>('/match-ranking', { sport }),
+    apiGet<RankingOverride[]>('/ranking-override', { sport }),
+  ]);
+  const io = righe.find((r) => r.giocatore_id === giocatoreId);
+  if (!io?.giocatore?.genere) return null;
+
+  const deltaDopoCutoff = new Map<string, number>();
+  const aggiungiDelta = (id: string, delta: number) => deltaDopoCutoff.set(id, (deltaDopoCutoff.get(id) ?? 0) + delta);
+  let ioAttivoPrimaDelCutoff = false;
+  for (const m of matches ?? []) {
+    const coinvolti: [string, number][] = [[m.a1_id, m.a1_delta], [m.a2_id, m.a2_delta], [m.b1_id, m.b1_delta], [m.b2_id, m.b2_delta]];
+    if (m.data < cutoffIso) {
+      if (coinvolti.some(([id]) => id === giocatoreId)) ioAttivoPrimaDelCutoff = true;
+      continue;
+    }
+    for (const [id, delta] of coinvolti) aggiungiDelta(id, delta);
+  }
+  for (const o of overrides ?? []) {
+    const dataIso = o.data.slice(0, 10);
+    if (dataIso < cutoffIso) {
+      if (o.giocatore_id === giocatoreId) ioAttivoPrimaDelCutoff = true;
+      continue;
+    }
+    aggiungiDelta(o.giocatore_id, Number(o.ranking_post) - Number(o.ranking_pre));
+  }
+  if (!ioAttivoPrimaDelCutoff) {
+    return { posizioneAttuale: attuale.posizione, totale: attuale.totale, posizionePrecedente: null, giorni };
+  }
+
+  const pari = righe.filter((r) => r.giocatore?.genere === io.giocatore!.genere);
+  const conValorePrecedente = pari
+    .map((r) => ({ id: r.giocatore_id, valore: r.ranking - (deltaDopoCutoff.get(r.giocatore_id) ?? 0) }))
+    .sort((a, b) => b.valore - a.valore);
+  const posizionePrecedente = conValorePrecedente.findIndex((r) => r.id === giocatoreId) + 1;
+
+  return {
+    posizioneAttuale: attuale.posizione, totale: attuale.totale,
+    posizionePrecedente: posizionePrecedente > 0 ? posizionePrecedente : null,
+    giorni,
+  };
 }
 
 /** Come sopra, ma ristretto ai giocatori affiliati a UN centro (widget Home

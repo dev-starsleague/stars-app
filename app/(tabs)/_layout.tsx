@@ -4,9 +4,8 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { SquircleView } from 'react-native-figma-squircle';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Radius, Spacing, CORNER_SMOOTHING } from '../../constants/theme';
+import { Radius, Spacing } from '../../constants/theme';
 import { useTheme } from '../../lib/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -87,13 +86,17 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
             return (
               <Pressable key={route.key} onPress={onPress} style={styles.item}>
-                {isFocused && (
-                  <SquircleView
-                    style={StyleSheet.absoluteFillObject}
-                    squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: 'rgba(255,175,0,0.14)' }}
-                  />
-                )}
-                <Ionicons name={isFocused ? ICON_ACTIVE[route.name] : ICON[route.name]} size={22} color={isFocused ? '#FFAF00' : NAVBAR.iconInactive} />
+                <View style={styles.iconWrap}>
+                  {/* Stato attivo = SOLO colore (icona+testo in arancione),
+                      mai un contenitore/pill dietro alla voce (fix utente
+                      esplicito, stile tab bar nativa Apple) — l'unica
+                      concessione è questo alone radiale minuscolo e
+                      sfumatissimo dietro alla sola icona, ottenuto con un
+                      cerchietto quasi trasparente + box-shadow sfocata
+                      (nessun bordo, nessuna superficie distinta). */}
+                  {isFocused && <View style={styles.glow} pointerEvents="none" />}
+                  <Ionicons name={isFocused ? ICON_ACTIVE[route.name] : ICON[route.name]} size={22} color={isFocused ? '#FFAF00' : NAVBAR.iconInactive} />
+                </View>
                 <Text style={[styles.label, { color: isFocused ? '#FFAF00' : NAVBAR.iconInactive }]}>{String(options.title ?? route.name)}</Text>
               </Pressable>
             );
@@ -157,6 +160,20 @@ const styles = StyleSheet.create({
   pillTint: { backgroundColor: NAVBAR.bg },
   row: { height: '100%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.xs },
   item: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  // Contenitore solo per centrare l'alone dietro all'icona — niente
+  // dimensione propria visibile (nessun background, nessun bordo).
+  iconWrap: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  // Alone radiale discreto: cerchio (base rotonda più grande, blur più
+  // piccolo rispetto a un cerchietto minuscolo — meno soggetto a
+  // deformarsi in un blur software) con riempimento quasi trasparente +
+  // una sfocatura leggera ai bordi. Diametro percepito totale ≈ 28 + 2×10
+  // = 48px, dentro il range 40–50px richiesto; opacità bassissima, nessun
+  // bordo netto, nessuna superficie distinta.
+  glow: {
+    position: 'absolute', width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(255,175,0,0.09)',
+    boxShadow: '0 0 10px 0px rgba(255,175,0,0.14)',
+  } as any,
   // Stesso slot flex:1 degli altri 4 (garantisce che sia esattamente al
   // centro di 5), ma allineato in alto: il bottone stella sporge sopra il
   // bordo della pillola con un margine negativo, non con position:absolute

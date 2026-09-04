@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, useWindowDimensions,
+  NativeSyntheticEvent, NativeScrollEvent, AccessibilityInfo,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +12,7 @@ import { useSport } from '../lib/sport';
 import { apiUrl } from '../lib/apiClient';
 import {
   getCentri, getClassifica, posizioneRankingGlobale, posizioneRankingCentro, posizioneRankingZona,
+  getVariazioneRankingGlobale, getAndamentoRecente, getInsightsSociali, getProssimaPartita,
   getEventiInEvidenza, getProdottiSponsorizzati, getAbbonamentiSponsorizzati,
   registraImpressioneSponsor, registraClickSponsor,
 } from '../lib/api';
@@ -16,9 +20,38 @@ import {
   caricaConfigWidget, salvaConfigWidget, DEFAULT_WIDGET_SINISTRA, DEFAULT_WIDGET_DESTRA,
 } from '../lib/homeWidgets';
 import type { ConfigWidgetHome, TipoWidgetHome } from '../lib/homeWidgets';
-import { Muted } from './ui';
+import { generaFraseAndamento } from '../lib/andamentoFrasi';
+import { Muted, Avatar } from './ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../constants/theme';
-import type { Centro, EventoCustom, ShopProdotto, AbbonamentoTemplate } from '../types/models';
+import type {
+  Centro, EventoCustom, ShopProdotto, AbbonamentoTemplate,
+  VariazioneRanking, AndamentoRecente, InsightsSociali, ProssimaPartita,
+} from '../types/models';
+
+// Quanto resta ferma ogni slide prima di avanzare da sola (fix utente
+// esplicito: "circa 4.5 secondi per slide").
+const AUTOPLAY_MS = 4500;
+// Vuoti "neutri" (mai null) per gli hook sotto: evitano di dover distinguere
+// "sto ancora caricando" da "ho caricato e non ci sono abbastanza dati" nelle
+// slide — in entrambi i casi si mostra lo stesso messaggio contestuale
+// elegante, mai "0 partite"/"0%" (fix utente esplicito).
+const ANDAMENTO_VUOTO: AndamentoRecente = { finestra: 10, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], setVinti: 0, setPersi: 0, trend: null };
+const INSIGHTS_VUOTI: InsightsSociali = { compagnoPreferito: null, nemesi: null, avversarioPreferito: null };
+
+// `prefers-reduced-motion` (fix utente esplicito): niente autoplay né salti
+// automatici quando l'utente ha chiesto al sistema di ridurre le
+// animazioni — AccessibilityInfo è la stessa API sia su iOS/Android sia sul
+// web di Expo (mappa la media query nativa).
+function useMovimentoRidotto(): boolean {
+  const [ridotto, setRidotto] = useState(false);
+  useEffect(() => {
+    let attivo = true;
+    AccessibilityInfo.isReduceMotionEnabled?.().then((v) => { if (attivo) setRidotto(!!v); }).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', (v: boolean) => setRidotto(!!v));
+    return () => { attivo = false; sub?.remove?.(); };
+  }, []);
+  return ridotto;
+}
 
 const ALTEZZA = 175;
 // Larghezza scheda: stessa di tutte le altre box "wide" dell'app (fix
@@ -92,6 +125,7 @@ export function HomeCarousel() {
   const { colors, glass, scheme } = useTheme();
   const { sportAttivo } = useSport();
   const { width: larghezzaFinestra } = useWindowDimensions();
+  const movimentoRidotto = useMovimentoRidotto();
   // La pagina intorno a questo componente ha sempre Spacing.lg di padding su
   // entrambi i lati (stesso schema di CalendarWidget/ctaCard) — la scheda
   // riempie esattamente quello spazio, MAI più larga di 390 (fix utente).
@@ -101,6 +135,10 @@ export function HomeCarousel() {
   const [centri, setCentri] = useState<Centro[]>([]);
   const [config, setConfig] = useState<[ConfigWidgetHome, ConfigWidgetHome]>([DEFAULT_WIDGET_SINISTRA, DEFAULT_WIDGET_DESTRA]);
   const [globale, setGlobale] = useState<EsitoWidget | null>(null);
+  const [variazione, setVariazione] = useState<VariazioneRanking | null>(null);
+  const [andamento, setAndamento] = useState<AndamentoRecente>(ANDAMENTO_VUOTO);
+  const [prossimaPartita, setProssimaPartita] = useState<ProssimaPartita | null>(null);
+  const [insights, setInsights] = useState<InsightsSociali>(INSIGHTS_VUOTI);
   const [esiti, setEsiti] = useState<[EsitoWidget | null, EsitoWidget | null]>([null, null]);
   const [eventiADV, setEventiADV] = useState<EventoCustom[]>([]);
   const [prodottiADV, setProdottiADV] = useState<ShopProdotto[]>([]);
@@ -122,6 +160,19 @@ export function HomeCarousel() {
     posizioneRankingGlobale(me.id, sportAttivo).then((esito) => {
       setGlobale(esito ? { etichetta: 'Ranking nazionale', posizione: esito.posizione, totale: esito.totale, extra: esito.valore.toFixed(2), icona: 'trophy' } : null);
     });
+    // Slide 1 (fix utente esplicito: "aggiungi solo la variazione ranking
+    // negli ultimi 30 giorni") — richiesta separata: la posizione attuale
+    // resta affidabile anche se questa (più pesante, ricostruita su tutta
+    // la popolazione) impiega qualche istante in più o fallisce.
+    getVariazioneRankingGlobale(me.id, sportAttivo, 30).then(setVariazione);
+    // Slide 2 e 3 (fix utente esplicito: "vita sportiva recente" + "insight
+    // personali e divertenti") — derivate dalle partite reali, mai finte.
+    getAndamentoRecente(me.id, sportAttivo, 10).then(setAndamento);
+    getInsightsSociali(me.id, sportAttivo).then(setInsights);
+    // Frase contestuale della slide 2 (fix utente esplicito: "se ha una
+    // serie positiva ed ha una partita a breve deve dire qualcosa a
+    // riguardo") — combinata con andamento/streak in generaFraseAndamento.
+    getProssimaPartita(me.id, sportAttivo).then(setProssimaPartita);
   }, [me?.id, sportAttivo]);
 
   useEffect(() => {
@@ -132,32 +183,6 @@ export function HomeCarousel() {
   const gruppiProdotti = useMemo(() => raggruppaPerCentro(prodottiADV), [prodottiADV]);
   const gruppiAbbonamenti = useMemo(() => raggruppaPerCentro(abbonamentiADV), [abbonamentiADV]);
   const nomeCentro = (centroId: string) => centri.find((c) => c.id === centroId)?.nome ?? 'Centro';
-
-  // Mappa pagina→elementi mostrati, stesso ordine del render sotto (card1,
-  // poi eventi — non tracciati, hanno un sistema di promozione a parte —
-  // poi i gruppi prodotti/abbonamenti) — serve solo per registrare
-  // un'impressione quando quella pagina diventa quella attiva del
-  // carosello (fix utente esplicito: "quante persone hanno cliccato...
-  // statistiche precise che si usano con le ads" — l'impression è la metà
-  // mancante per calcolare un CTR vero, non solo il numero di click).
-  const pagineADV = useMemo(() => {
-    const pagine: ({ tipoTarget: 'prodotto' | 'abbonamento'; centroId: string; ids: string[] } | null)[] = [];
-    for (let i = 0; i < eventiADV.length; i++) pagine.push(null);
-    for (const g of gruppiProdotti) pagine.push({ tipoTarget: 'prodotto', centroId: g.centroId, ids: g.righe.slice(0, 5).map((r) => r.id) });
-    for (const g of gruppiAbbonamenti) pagine.push({ tipoTarget: 'abbonamento', centroId: g.centroId, ids: g.righe.slice(0, 5).map((r) => r.id) });
-    return pagine;
-  }, [eventiADV, gruppiProdotti, gruppiAbbonamenti]);
-
-  // Un'impressione per elemento, una sola volta per apertura dell'app (non
-  // ogni volta che si torna a scorrere sulla stessa scheda).
-  const pagineGiaLoggate = useRef<Set<number>>(new Set());
-  useEffect(() => {
-    if (pagina === 0 || pagineGiaLoggate.current.has(pagina)) return;
-    const info = pagineADV[pagina - 1];
-    if (!info) return;
-    pagineGiaLoggate.current.add(pagina);
-    for (const id of info.ids) registraImpressioneSponsor(info.centroId, info.tipoTarget, id, me?.id);
-  }, [pagina, pagineADV, me?.id]);
 
   const salvaSlot = (indice: 0 | 1, nuovo: ConfigWidgetHome) => {
     setConfig((cur) => {
@@ -170,6 +195,7 @@ export function HomeCarousel() {
 
   const apriEvento = () => router.push('/(tabs)/eventi');
   const apriShop = () => router.push('/(tabs)/stars-coin');
+  const apriGiocatore = (giocatoreId: string) => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: giocatoreId } });
   // Tap su UN prodotto/abbonamento specifico dentro la scheda ADV multipla
   // deve portare dritto a quello, non solo all'apertura del centro (fix
   // utente esplicito) — vedi il deep-link letto da app/(tabs)/stars-coin.tsx.
@@ -184,11 +210,198 @@ export function HomeCarousel() {
     router.push({ pathname: '/(tabs)/stars-coin', params: { centroId, abbonamentoId } });
   };
 
-  const totaleSchede = 1 + eventiADV.length + gruppiProdotti.length + gruppiAbbonamenti.length;
+  // ============================================================
+  // Motore del carosello: autoplay + swipe manuale + loop infinito senza
+  // salti visivi + pausa al tocco + rispetto di prefers-reduced-motion (fix
+  // utente esplicito, vedi tutta questa sezione). Le 3 slide personali
+  // (ranking, andamento recente, insight social) sono SEMPRE presenti e
+  // sempre per prime; dopo vengono le ADV del centro. Le pagine "reali" i
+  // vanno da 0 a n-1: per il loop, la ScrollView renderizza [ultima,
+  // ...reali, prima] (n+2 pagine) e la posizione iniziale è l'indice
+  // esteso 1 (= reale 0). Quando l'utente/l'autoplay arriva su un clone
+  // (estremo 0 o n+1), non appena lo scroll si ferma si salta SENZA
+  // animazione alla pagina reale identica — il clone è pixel-identico
+  // all'originale, quindi il salto non si vede (tecnica standard per i
+  // caroselli infiniti, l'unico modo per non avere un salto quando si
+  // torna dall'ultima alla prima senza mai "vedere" i bordi dell'array).
+  // ============================================================
+  const slide: { key: string; node: React.ReactNode }[] = [
+    { key: 'ranking', node: (
+      <RankingSlide globale={globale} variazione={variazione} sportAttivo={sportAttivo} esiti={esiti}
+        onConfiguraSlot={setSlotConfigurando} colors={colors} s={s} />
+    ) },
+    { key: 'andamento', node: <AndamentoSlide andamento={andamento} prossimaPartita={prossimaPartita} colors={colors} s={s} /> },
+    { key: 'social', node: <SocialSlide insights={insights} colors={colors} s={s} onApriGiocatore={apriGiocatore} /> },
+    ...eventiADV.map((e) => ({
+      key: `ev-${e.id}`,
+      node: (
+        <Pressable onPress={apriEvento} style={s.advCard}>
+          {e.immagine_url && <Image source={{ uri: e.immagine_url.startsWith('http') ? e.immagine_url : apiUrl(e.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />}
+          <View style={[StyleSheet.absoluteFillObject, s.advOverlay]} />
+          <View style={s.advBadge}><Text style={s.advBadgeText}>EVENTO</Text></View>
+          <Text style={s.advTitle} numberOfLines={2}>{e.nome}</Text>
+          {e.descrizione && <Text style={s.advSubChiaro} numberOfLines={1}>{e.descrizione}</Text>}
+        </Pressable>
+      ),
+    })),
+    // Un centro con più prodotti sponsorizzati compare in UNA sola scheda
+    // con tutti insieme, non una ripetuta per prodotto (fix utente
+    // esplicito) — stesso trattamento per gli abbonamenti.
+    ...gruppiProdotti.map((g) => ({
+      key: `pr-${g.centroId}`,
+      node: (
+        <MultiADVCard badge="SHOP" centroNome={nomeCentro(g.centroId)}
+          righe={g.righe} onPressCard={apriShop} onPressItem={(id) => apriProdotto(g.centroId, id)} s={s} colors={colors} />
+      ),
+    })),
+    ...gruppiAbbonamenti.map((g) => ({
+      key: `ab-${g.centroId}`,
+      node: (
+        <MultiADVCard badge="ABBONAMENTI" centroNome={nomeCentro(g.centroId)}
+          righe={g.righe} onPressCard={apriShop} onPressItem={(id) => apriAbbonamento(g.centroId, id)} s={s} colors={colors} />
+      ),
+    })),
+  ];
+  const n = slide.length;
+  const estese = [slide[n - 1], ...slide, slide[0]];
+
+  // pagineADV: stesso ordine delle ADV sopra, indicizzato 0-based SOLO tra
+  // le ADV (le 3 slide personali stanno prima, offset fisso = 3) — usata
+  // solo per registrare un'impressione quando quella pagina diventa quella
+  // attiva del carosello (fix utente esplicito: l'impression è la metà
+  // mancante per calcolare un CTR vero, non solo il numero di click).
+  const pagineADV = useMemo(() => {
+    const pagine: ({ tipoTarget: 'prodotto' | 'abbonamento'; centroId: string; ids: string[] } | null)[] = [];
+    for (let i = 0; i < eventiADV.length; i++) pagine.push(null);
+    for (const g of gruppiProdotti) pagine.push({ tipoTarget: 'prodotto', centroId: g.centroId, ids: g.righe.slice(0, 5).map((r) => r.id) });
+    for (const g of gruppiAbbonamenti) pagine.push({ tipoTarget: 'abbonamento', centroId: g.centroId, ids: g.righe.slice(0, 5).map((r) => r.id) });
+    return pagine;
+  }, [eventiADV, gruppiProdotti, gruppiAbbonamenti]);
+
+  const pagineGiaLoggate = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (pagina < 3 || pagineGiaLoggate.current.has(pagina)) return;
+    const info = pagineADV[pagina - 3];
+    if (!info) return;
+    pagineGiaLoggate.current.add(pagina);
+    for (const id of info.ids) registraImpressioneSponsor(info.centroId, info.tipoTarget, id, me?.id);
+  }, [pagina, pagineADV, me?.id]);
+
+  // Indice ESTESO corrente (include i due cloni) — unica fonte di verità
+  // per la matematica dello scroll; `pagina` (sotto) è solo la proiezione
+  // logica 0..n-1 usata per i pallini/il resto della UI.
+  const extIndexRef = useRef(1);
+  const isScrollingRef = useRef(false);
+  const toccandoRef = useRef(false);
+  const autoplayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // onMomentumScrollEnd non è affidabile ovunque per scroll AVVIATI DA
+  // CODICE (verificato: su web, dopo uno scrollTo({animated:true})
+  // programmatico non scatta mai, quindi l'autoplay si fermerebbe dopo un
+  // solo giro) — l'assestamento dello scroll (manuale O automatico) si
+  // rileva perciò da soli: un debounce sugli eventi onScroll, che invece
+  // arrivano sempre su ogni piattaforma. onMomentumScrollEnd resta collegato
+  // comunque, come scorciatoia in più dove arriva davvero (nativo): non fa
+  // danno chiamare la correzione due volte, è idempotente.
+  const assestamentoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const impostaIndiceEsteso = useCallback((idx: number) => {
+    extIndexRef.current = idx;
+    setPagina(((idx - 1) + n) % n);
+  }, [n]);
+
+  const fermaAutoplay = useCallback(() => {
+    if (autoplayTimer.current) { clearTimeout(autoplayTimer.current); autoplayTimer.current = null; }
+  }, []);
+
+  // Programma il PROSSIMO avanzamento automatico — l'unico punto che fa
+  // scorrere da sola la card. Auto-si-riprogramma da sé (vedi sotto), non
+  // dipende da nessun evento di "fine scroll" del sistema.
+  const programmaProssimoTick = useCallback(() => {
+    fermaAutoplay();
+    if (movimentoRidotto || toccandoRef.current || n <= 1) return;
+    autoplayTimer.current = setTimeout(() => {
+      scrollRef.current?.scrollTo({ x: (extIndexRef.current + 1) * larghezzaScheda, animated: true });
+    }, AUTOPLAY_MS);
+  }, [movimentoRidotto, n, larghezzaScheda, fermaAutoplay]);
+
+  // Riposiziona (SENZA animazione) sull'indice reale quando si atterra su
+  // uno dei due cloni agli estremi — l'unico punto in cui "si vede" il
+  // giro dell'array, ma essendo un clone pixel-identico non si vede nulla.
+  const correggiCloni = useCallback((idxEsteso: number) => {
+    if (idxEsteso === 0) {
+      scrollRef.current?.scrollTo({ x: n * larghezzaScheda, animated: false });
+      impostaIndiceEsteso(n);
+    } else if (idxEsteso === n + 1) {
+      scrollRef.current?.scrollTo({ x: 1 * larghezzaScheda, animated: false });
+      impostaIndiceEsteso(1);
+    }
+  }, [n, larghezzaScheda, impostaIndiceEsteso]);
+
+  // Chiamata quando lo scroll (manuale o automatico) si è davvero fermato:
+  // corregge l'eventuale clone e rimette in moto l'autoplay — "dopo circa
+  // 4.5 secondi riprende l'autoplay" (fix utente), misurati da QUI, non da
+  // quando è partito lo swipe.
+  const gestisciAssestamento = useCallback((idx: number) => {
+    correggiCloni(idx);
+    isScrollingRef.current = false;
+    if (!toccandoRef.current) programmaProssimoTick();
+  }, [correggiCloni, programmaProssimoTick]);
+
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setPagina(Math.round(e.nativeEvent.contentOffset.x / larghezzaScheda));
+    const idx = Math.round(e.nativeEvent.contentOffset.x / larghezzaScheda);
+    impostaIndiceEsteso(idx);
+    // Debounce "sei fermo?": ogni nuovo evento di scroll rimanda il
+    // controllo di 120ms — quando smettono di arrivare (drag rilasciato E
+    // l'eventuale inerzia/snap è terminata, oppure lo scrollTo animato
+    // dell'autoplay è concluso), scatta la sistemazione finale.
+    if (assestamentoTimer.current) clearTimeout(assestamentoTimer.current);
+    assestamentoTimer.current = setTimeout(() => gestisciAssestamento(idx), 120);
+  }, [larghezzaScheda, impostaIndiceEsteso, gestisciAssestamento]);
+
+  const onScrollBeginDrag = useCallback(() => {
+    isScrollingRef.current = true;
+    toccandoRef.current = true;
+    fermaAutoplay(); // "quando l'utente fa swipe manualmente, resetta il timer" (fix utente)
+  }, [fermaAutoplay]);
+
+  const onMomentumScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Scorciatoia quando l'evento arriva davvero (nativo): niente da
+    // aspettare, l'assestamento è già qui. Idempotente rispetto al
+    // debounce di onScroll qui sopra (può capitare che scattino entrambi).
+    const idx = Math.round(e.nativeEvent.contentOffset.x / larghezzaScheda);
+    if (assestamentoTimer.current) { clearTimeout(assestamentoTimer.current); assestamentoTimer.current = null; }
+    impostaIndiceEsteso(idx);
+    gestisciAssestamento(idx);
+  }, [larghezzaScheda, impostaIndiceEsteso, gestisciAssestamento]);
+
+  const onTouchStart = useCallback(() => {
+    toccandoRef.current = true;
+    fermaAutoplay(); // "se l'utente sta toccando la card, sospendi temporaneamente l'autoplay"
+  }, [fermaAutoplay]);
+  const onTouchEnd = useCallback(() => {
+    toccandoRef.current = false;
+    // Solo un tap (tap su un giocatore/bottone dentro la scheda), niente
+    // drag in arrivo: nessun evento di scroll seguirà, tocca a noi
+    // rimettere in moto l'autoplay. Se invece è in corso un vero swipe,
+    // isScrollingRef è già true e sarà il debounce di onScroll a farlo.
+    if (!isScrollingRef.current) programmaProssimoTick();
+  }, [programmaProssimoTick]);
+
+  // Riposiziona sulla pagina reale corrente (senza animazione, nessun
+  // salto visivo) ogni volta che la larghezza scheda cambia — es. rotazione
+  // schermo/resize sul web — e avvia l'autoplay al mount.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: extIndexRef.current * larghezzaScheda, animated: false });
   }, [larghezzaScheda]);
-  const tornaAlRanking = () => scrollRef.current?.scrollTo({ x: 0, animated: true });
+  useEffect(() => {
+    programmaProssimoTick();
+    return () => {
+      fermaAutoplay();
+      if (assestamentoTimer.current) clearTimeout(assestamentoTimer.current);
+    };
+  }, [programmaProssimoTick, fermaAutoplay]);
+
+  const tornaAlRanking = () => scrollRef.current?.scrollTo({ x: 1 * larghezzaScheda, animated: true });
 
   return (
     <View style={{ marginBottom: Spacing.md }}>
@@ -196,48 +409,13 @@ export function HomeCarousel() {
         <ScrollView
           ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}
           pagingEnabled decelerationRate="fast"
+          contentOffset={{ x: larghezzaScheda, y: 0 }}
           onScroll={onScroll} scrollEventThrottle={32}
+          onScrollBeginDrag={onScrollBeginDrag} onMomentumScrollEnd={onMomentumScrollEnd}
+          onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
         >
-          {/* Prima scheda: ranking globale + 2 widget personalizzabili */}
-          <View style={s.card1}>
-            <View style={s.globaleBox}>
-              <Ionicons name="trophy" size={18} color={colors.gold} style={{ marginBottom: 2 }} />
-              <Text style={s.globaleNum}>{globale?.posizione ? `#${globale.posizione}` : '—'}</Text>
-              <Muted style={{ fontSize: Font.small, textAlign: 'center' }}>{globale?.totale ? `su ${globale.totale} giocatori` : 'non ancora in classifica'}</Muted>
-              <Text style={s.globaleLabel}>Ranking nazionale · {sportAttivo}</Text>
-            </View>
-            <View style={s.divider} />
-            <View style={s.miniColonna}>
-              <MiniWidget esito={esiti[0]} colors={colors} onPress={() => setSlotConfigurando(0)} />
-              <View style={{ height: 1, backgroundColor: colors.navyLine + '22' }} />
-              <MiniWidget esito={esiti[1]} colors={colors} onPress={() => setSlotConfigurando(1)} />
-            </View>
-          </View>
-
-          {/* ADV: eventi in evidenza + prodotti sponsorizzati dai centri */}
-          {eventiADV.map((e) => (
-            <Pressable key={`ev-${e.id}`} onPress={apriEvento} style={s.advCard}>
-              {e.immagine_url && <Image source={{ uri: e.immagine_url.startsWith('http') ? e.immagine_url : apiUrl(e.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />}
-              <View style={[StyleSheet.absoluteFillObject, s.advOverlay]} />
-              <View style={s.advBadge}><Text style={s.advBadgeText}>EVENTO</Text></View>
-              <Text style={s.advTitle} numberOfLines={2}>{e.nome}</Text>
-              {e.descrizione && <Text style={s.advSubChiaro} numberOfLines={1}>{e.descrizione}</Text>}
-            </Pressable>
-          ))}
-          {/* Un centro con più prodotti sponsorizzati compare in UNA sola
-              scheda con tutti insieme, non una ripetuta per prodotto (fix
-              utente esplicito) — stesso trattamento per gli abbonamenti. */}
-          {gruppiProdotti.map((g) => (
-            <MultiADVCard
-              key={`pr-${g.centroId}`} badge="SHOP" centroNome={nomeCentro(g.centroId)}
-              righe={g.righe} onPressCard={apriShop} onPressItem={(id) => apriProdotto(g.centroId, id)} s={s} colors={colors}
-            />
-          ))}
-          {gruppiAbbonamenti.map((g) => (
-            <MultiADVCard
-              key={`ab-${g.centroId}`} badge="ABBONAMENTI" centroNome={nomeCentro(g.centroId)}
-              righe={g.righe} onPressCard={apriShop} onPressItem={(id) => apriAbbonamento(g.centroId, id)} s={s} colors={colors}
-            />
+          {estese.map((item, i) => (
+            <View key={`${item.key}-${i}`} style={{ width: larghezzaScheda }}>{item.node}</View>
           ))}
         </ScrollView>
 
@@ -254,9 +432,9 @@ export function HomeCarousel() {
       </View>
 
       {/* Pallini: indicano quante schede ci sono e su quale sei (fix utente) */}
-      {totaleSchede > 1 && (
+      {n > 1 && (
         <View style={s.dotsRow}>
-          {Array.from({ length: totaleSchede }).map((_, i) => (
+          {Array.from({ length: n }).map((_, i) => (
             <View key={i} style={[s.dot, i === pagina && { backgroundColor: colors.gold, width: 16 }]} />
           ))}
         </View>
@@ -270,6 +448,277 @@ export function HomeCarousel() {
           onSalva={(nuovo) => salvaSlot(slotConfigurando, nuovo)}
         />
       )}
+    </View>
+  );
+}
+
+// ---------- Slide 1: ranking globale + variazione 30gg + 2 widget ----------
+function RankingSlide({ globale, variazione, sportAttivo, esiti, onConfiguraSlot, colors, s }: {
+  globale: EsitoWidget | null; variazione: VariazioneRanking | null; sportAttivo: string;
+  esiti: [EsitoWidget | null, EsitoWidget | null]; onConfiguraSlot: (i: 0 | 1) => void;
+  colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  // Variazione posizione ultimi 30gg (fix utente esplicito: "#147 → #129,
+  // +18 posizioni") — positiva = risalita in classifica (posizione più
+  // bassa = meglio), quindi il segno da mostrare è invertito rispetto alla
+  // differenza numerica grezza tra le due posizioni.
+  const delta = variazione?.posizionePrecedente != null ? variazione.posizionePrecedente - variazione.posizioneAttuale : null;
+  return (
+    <View style={s.card1}>
+      <View style={s.globaleBox}>
+        <Ionicons name="trophy" size={18} color={colors.gold} style={{ marginBottom: 2 }} />
+        <Text style={s.globaleNum}>{globale?.posizione ? `#${globale.posizione}` : '—'}</Text>
+        <Muted style={{ fontSize: Font.small, textAlign: 'center' }}>
+          {globale?.totale ? `su ${globale.totale}${delta === null ? ' giocatori' : ''}` : 'non ancora in classifica'}
+          {delta !== null && delta !== undefined && (
+            <Text style={{ color: delta > 0 ? colors.green : delta < 0 ? colors.red : colors.slate, fontWeight: '800' }}>
+              {globale?.totale ? ' · ' : ''}{delta > 0 ? '▲+' : delta < 0 ? '▼' : '='}{delta !== 0 ? Math.abs(delta) : ''}
+            </Text>
+          )}
+        </Muted>
+        <Text style={s.globaleLabel}>Ranking nazionale · {sportAttivo}</Text>
+      </View>
+      <View style={s.divider} />
+      <View style={s.miniColonna}>
+        <MiniWidget esito={esiti[0]} colors={colors} onPress={() => onConfiguraSlot(0)} />
+        <View style={{ height: 1, backgroundColor: colors.navyLine + '22' }} />
+        <MiniWidget esito={esiti[1]} colors={colors} onPress={() => onConfiguraSlot(1)} />
+      </View>
+    </View>
+  );
+}
+
+// ---------- Slide 2: "vita sportiva recente" (fix utente esplicito) ----------
+function AndamentoSlide({ andamento, prossimaPartita, colors, s }: {
+  andamento: AndamentoRecente; prossimaPartita: ProssimaPartita | null; colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  if (andamento.disputate === 0) {
+    return (
+      <View style={s.card1}>
+        <SlideVuota
+          icona="tennisball-outline" titolo="Ancora nessuna partita"
+          messaggio="Gioca la tua prima partita per vedere qui il tuo andamento recente"
+          colors={colors} s={s}
+        />
+      </View>
+    );
+  }
+  // Icona/testo/colore dell'andamento (fix utente esplicito: confronto tra
+  // le 5 partite più vecchie e le 5 più recenti delle ultime 10) — null
+  // quando ci sono troppo poche partite per un confronto sensato.
+  const trendInfo = andamento.trend === 'crescita' ? { icona: 'trending-up' as const, testo: 'Crescita', colore: colors.green }
+    : andamento.trend === 'calo' ? { icona: 'trending-down' as const, testo: 'Calo', colore: colors.red }
+    : andamento.trend === 'stabile' ? { icona: 'remove' as const, testo: 'Stabile', colore: colors.slate }
+    : null;
+  // Frase "ironica e competizionale" che combina streak/trend e prossima
+  // partita reale (fix utente esplicito) — ricalcolata a ogni render, ma il
+  // CONTENUTO dipende solo dai dati: cambia il template scelto a parità di
+  // caso, non il caso stesso.
+  const frase = useMemo(() => generaFraseAndamento(andamento, prossimaPartita), [andamento, prossimaPartita]);
+  return (
+    <View style={[s.card1, { flexDirection: 'column' }]}>
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        <View style={[s.globaleBox, { gap: 5 }]}>
+          <Ionicons name="pulse" size={18} color={colors.gold} />
+          <View style={{ alignItems: 'center', gap: 1 }}>
+            <Text style={s.globaleNum}>{andamento.winRatePercento}%</Text>
+            <Muted style={{ fontSize: Font.small, textAlign: 'center' }}>win rate</Muted>
+          </View>
+          <Text style={s.globaleLabel}>Ultime {andamento.disputate} partite</Text>
+          {andamento.streak && (
+            <View style={s.streakChip}>
+              <Ionicons name="flame" size={12} color={andamento.streak.tipo === 'vittorie' ? colors.gold : colors.slate} />
+              <Text style={[s.streakChipTesto, andamento.streak.tipo !== 'vittorie' && { color: colors.slate }]} numberOfLines={1}>
+                {andamento.streak.conteggio} {andamento.streak.tipo}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={s.divider} />
+        <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
+          <View style={s.andamentoRiga}>
+            <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+            <Text style={s.andamentoTesto}>{andamento.vinte} vinte</Text>
+            <View style={s.andamentoRigaDividerV} />
+            <Ionicons name="close-circle" size={18} color={colors.red} />
+            <Text style={s.andamentoTesto}>{andamento.perse} perse</Text>
+          </View>
+          <View style={[s.andamentoRiga, { gap: 5 }]}>
+            {/* Dal più vecchio (a sinistra) al più recente (a destra, "adesso") —
+                stessa convenzione dei "form guide" sportivi (fix utente esplicito). */}
+            {[...andamento.formaRecente].reverse().map((v, i) => (
+              <View key={i} style={[s.formaPallino, { backgroundColor: v ? colors.green : colors.red }]} />
+            ))}
+          </View>
+          <View>
+            <View style={s.andamentoDividerOriz} />
+            <View style={[s.andamentoStatsRow, { marginTop: 7 }]}>
+              <View style={[s.andamentoStatTile, { flex: 0.8 }]}>
+                <Text style={s.andamentoStatLabel}>Set vinti</Text>
+                <Text style={[s.andamentoStatValore, { color: colors.green }]}>{andamento.setVinti}</Text>
+              </View>
+              <View style={[s.andamentoStatTile, { flex: 0.8 }]}>
+                <Text style={s.andamentoStatLabel}>Set persi</Text>
+                <Text style={[s.andamentoStatValore, { color: colors.red }]}>{andamento.setPersi}</Text>
+              </View>
+              <View style={[s.andamentoStatTile, { flex: 1.3 }]}>
+                <Text style={s.andamentoStatLabel}>Forma</Text>
+                {trendInfo ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <Ionicons name={trendInfo.icona} size={12} color={trendInfo.colore} />
+                    <Text style={[s.andamentoStatValore, { color: trendInfo.colore, fontSize: 11.5 }]} numberOfLines={1}>{trendInfo.testo}</Text>
+                  </View>
+                ) : (
+                  <Text style={[s.andamentoStatValore, { color: colors.slate }]}>—</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+      {/* Banner "ironico e competizionale" (fix utente esplicito) — sempre
+          in fondo alla card, stesso tono dei saluti adattivi della Home
+          (lib/saluto.ts), ma qui reagisce a streak/trend + prossima partita. */}
+      <View style={s.andamentoBanner}>
+        <Ionicons name={frase.icona} size={13} color={colors.gold} />
+        <Text style={s.andamentoBannerTesto} numberOfLines={2}>{frase.testo}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ---------- Slide 3: insight "social" — compagno/nemesi/avversario
+// preferito (fix utente esplicito: "insight personali e divertenti, non
+// statistiche amministrative") ----------
+function SocialSlide({ insights, colors, s, onApriGiocatore }: {
+  insights: InsightsSociali; colors: AppColors; s: ReturnType<typeof makeStyles>; onApriGiocatore: (id: string) => void;
+}) {
+  const tutteVuote = !insights.compagnoPreferito && !insights.nemesi && !insights.avversarioPreferito;
+  if (tutteVuote) {
+    return (
+      <View style={s.card1}>
+        <SlideVuota
+          icona="people-outline" titolo="Ancora presto per dirlo"
+          messaggio="Gioca qualche partita in più per scoprire compagni e avversari preferiti"
+          colors={colors} s={s}
+        />
+      </View>
+    );
+  }
+  // 3 colonne (fix utente esplicito, mockup condiviso: avatar con anello
+  // colorato, doppia riga statistica, chip "insight" contestuale sotto) —
+  // adattate all'altezza fissa della card: niente titolo/sottotitolo in
+  // testa (non c'entrerebbe), il resto segue lo stesso linguaggio.
+  return (
+    <View style={[s.card1, { paddingHorizontal: Spacing.sm }]}>
+      <SocialColonna
+        titolo="Compagno" icona="people" ringColor={colors.gold} dato={insights.compagnoPreferito}
+        riga1={(d) => `${d.partiteInsieme} partite insieme`}
+        riga2={(d) => `${Math.round((d.vittorie / d.partiteInsieme) * 100)}% vittorie`}
+        insight={insightCompagno} pillTint={colors.gold}
+        messaggioVuoto="Gioca in doppio per trovare il tuo compagno ideale"
+        colors={colors} s={s} onApriGiocatore={onApriGiocatore}
+      />
+      <View style={s.socialColonnaDivider} />
+      <SocialColonna
+        titolo="Nemesi" icona="skull" ringColor={colors.red} dato={insights.nemesi}
+        riga1={(d) => `${d.vittorie} vittorie`}
+        riga2={(d) => `${d.sconfitte} sconfitte`}
+        insight={insightNemesi} pillTint={colors.red}
+        messaggioVuoto="Continua a giocare per scoprirla"
+        colors={colors} s={s} onApriGiocatore={onApriGiocatore}
+      />
+      <View style={s.socialColonnaDivider} />
+      <SocialColonna
+        titolo="Preferito" icona="trophy" ringColor={colors.gold} dato={insights.avversarioPreferito}
+        riga1={(d) => `${d.vittorie} vittorie`}
+        riga2={(d) => `${d.sconfitte} sconfitte`}
+        insight={insightPreferito} pillTint={colors.gold}
+        messaggioVuoto="Continua a giocare per scoprirlo"
+        colors={colors} s={s} onApriGiocatore={onApriGiocatore}
+        // Solo l'intestazione di QUESTA colonna arriva sotto al bottoncino
+        // "torna al ranking" (sempre in alto a destra sopra ogni slide
+        // successiva alla prima) — si sposta solo lei, non tutta la
+        // colonna: avatar/nome/statistiche restano alla larghezza piena,
+        // niente troncamento dei nomi per far spazio (fix utente esplicito).
+        headerRightInset={26}
+      />
+    </View>
+  );
+}
+
+type Insight = NonNullable<InsightsSociali['compagnoPreferito']>;
+// Micro-copy contestuale sotto ogni colonna (fix utente esplicito, mockup
+// condiviso: "Ottima intesa!", "Sfida aperta!", "Dominio totale!") — deriva
+// SEMPRE dai numeri reali già calcolati, mai un testo a caso.
+function insightCompagno(d: Insight): { icona: React.ComponentProps<typeof Ionicons>['name']; testo: string } {
+  const wr = d.vittorie / d.partiteInsieme;
+  if (wr >= 0.7) return { icona: 'thumbs-up', testo: 'Ottima intesa' };
+  if (wr >= 0.5) return { icona: 'thumbs-up-outline', testo: 'Buona coppia' };
+  return { icona: 'build-outline', testo: 'Da rodare' };
+}
+function insightNemesi(d: Insight): { icona: React.ComponentProps<typeof Ionicons>['name']; testo: string } {
+  if (d.vittorie > d.sconfitte) return { icona: 'flag-outline', testo: 'Sfida aperta' };
+  if (d.vittorie === d.sconfitte) return { icona: 'git-compare-outline', testo: 'Equilibrio' };
+  return { icona: 'warning-outline', testo: 'Ancora ostico' };
+}
+function insightPreferito(d: Insight): { icona: React.ComponentProps<typeof Ionicons>['name']; testo: string } {
+  if (d.sconfitte === 0) return { icona: 'ribbon', testo: 'Dominio totale' };
+  return { icona: 'trending-up', testo: 'Ti riesce bene' };
+}
+
+function SocialColonna({ titolo, icona, ringColor, dato, riga1, riga2, insight, pillTint, messaggioVuoto, colors, s, onApriGiocatore, headerRightInset }: {
+  titolo: string; icona: React.ComponentProps<typeof Ionicons>['name']; ringColor: string; dato: Insight | null;
+  riga1: (d: Insight) => string; riga2: (d: Insight) => string; insight: (d: Insight) => { icona: React.ComponentProps<typeof Ionicons>['name']; testo: string };
+  pillTint: string; messaggioVuoto: string;
+  colors: AppColors; s: ReturnType<typeof makeStyles>; onApriGiocatore: (id: string) => void;
+  headerRightInset?: number;
+}) {
+  if (!dato) {
+    return (
+      <View style={s.socialColonna}>
+        <View style={[s.socialColonnaHead, headerRightInset ? { marginRight: headerRightInset } : null]}>
+          <Ionicons name={icona} size={13} color={colors.slate} />
+          <Text style={s.socialColonnaLabel} numberOfLines={1}>{titolo}</Text>
+        </View>
+        <View style={s.socialColonnaIconaVuota}>
+          <Ionicons name={`${icona}-outline` as any} size={18} color={colors.slate} />
+        </View>
+        <Text style={s.socialVuotoTesto} numberOfLines={3}>{messaggioVuoto}</Text>
+      </View>
+    );
+  }
+  const ins = insight(dato);
+  return (
+    <Pressable onPress={() => onApriGiocatore(dato.giocatoreId)} style={s.socialColonna}>
+      <View style={[s.socialColonnaHead, headerRightInset ? { marginRight: headerRightInset } : null]}>
+        <Ionicons name={icona} size={13} color={ringColor} />
+        <Text style={s.socialColonnaLabel} numberOfLines={1}>{titolo}</Text>
+      </View>
+      <Avatar name={dato.nome} uri={dato.avatarUrl} size={42} gold ringColor={ringColor} />
+      <Text style={s.socialColonnaNome} numberOfLines={1}>{dato.nome}</Text>
+      <Text style={s.socialColonnaStat} numberOfLines={1}>{riga1(dato)}</Text>
+      <Text style={[s.socialColonnaStat, { color: colors.gold, fontWeight: '800' }]} numberOfLines={1}>{riga2(dato)}</Text>
+      <View style={[s.socialInsightPill, { backgroundColor: pillTint + '18' }]}>
+        <Ionicons name={ins.icona} size={11} color={pillTint} />
+        <Text style={[s.socialInsightTesto, { color: pillTint }]} numberOfLines={1}>{ins.testo}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// Messaggio contestuale a tutta scheda (mai "0 partite"/"0%"/"nessun
+// avversario" — fix utente esplicito) — stessa dimensione/posizione della
+// card1, solo centrata invece che divisa in colonne.
+function SlideVuota({ icona, titolo, messaggio, colors, s }: {
+  icona: React.ComponentProps<typeof Ionicons>['name']; titolo: string; messaggio: string;
+  colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={s.slideVuotaWrap}>
+      <Ionicons name={icona} size={26} color={colors.slate} />
+      <Text style={s.slideVuotaTitolo}>{titolo}</Text>
+      <Muted style={s.slideVuotaMessaggio}>{messaggio}</Muted>
     </View>
   );
 }
@@ -451,6 +900,59 @@ function makeStyles(colors: AppColors, glass: AppGlass, larghezzaScheda: number)
     globaleLabel: { fontSize: 11, fontWeight: '700', color: colors.navyDeep, textAlign: 'center', marginTop: 6 },
     divider: { width: 1, backgroundColor: colors.navyLine + '33', marginHorizontal: Spacing.md },
     miniColonna: { flex: 1, justifyContent: 'space-around' },
+    // Slide 2 "andamento recente": righe bilancio/streak, stesso ritmo
+    // verticale di MiniWidget qui sopra (icona + testo su una riga).
+    andamentoRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.sm },
+    andamentoTesto: { fontSize: Font.small, fontWeight: '700', color: colors.navyDeep },
+    andamentoRigaDividerV: { width: 1, height: 14, backgroundColor: colors.navyLine + '33' },
+    formaPallino: { width: 10, height: 10, borderRadius: 5 },
+    // Chip "N vittorie/sconfitte consecutive" sotto l'etichetta a sinistra —
+    // stesso linguaggio di Pill (components/ui.tsx), tinta oro tenue.
+    streakChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill,
+      backgroundColor: colors.gold + '18', maxWidth: 104,
+    },
+    streakChipTesto: { fontSize: 9.5, fontWeight: '800', color: colors.navyDeep, flexShrink: 1 },
+    // Riga di 3 mini-stat (Set vinti/Set persi/Forma) sotto una sottile riga
+    // divisoria orizzontale — fix utente esplicito, ispirata al mockup
+    // condiviso ma condensata per stare nell'altezza fissa della card.
+    andamentoDividerOriz: { height: 1, backgroundColor: colors.navyLine + '22', marginHorizontal: Spacing.sm },
+    andamentoStatsRow: { flexDirection: 'row', paddingHorizontal: Spacing.sm },
+    andamentoStatTile: { flex: 1, gap: 1 },
+    andamentoStatLabel: { fontSize: 9, fontWeight: '800', color: colors.slate, textTransform: 'uppercase', letterSpacing: 0.2 },
+    andamentoStatValore: { fontSize: 15, fontWeight: '800', color: colors.navyDeep },
+    // Banner frase "ironica e competizionale" in fondo alla slide 2 (fix
+    // utente esplicito) — tinta oro tenue, stesso linguaggio dello
+    // streakChip qui sopra, ma a piena larghezza.
+    andamentoBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6,
+      paddingHorizontal: Spacing.sm, paddingVertical: 5, borderRadius: Radius.sm,
+      backgroundColor: colors.gold + '14',
+    },
+    andamentoBannerTesto: { flex: 1, fontSize: 10.5, fontWeight: '700', color: colors.navyDeep, lineHeight: 13.5 },
+    // Slide 3 "social": 3 righe orizzontali piene (non più 3 colonne strette
+    // — fix utente esplicito "info strutturate meglio, non tagliate, più
+    // leggibili") — ogni riga si divide lo spazio verticale in parti
+    // uguali (flex:1), un nome ha tutta la larghezza della card per sé.
+    // Slide 3 "avversari": 3 colonne con avatar (anello colorato), doppia
+    // riga statistica e chip "insight" contestuale sotto (fix utente
+    // esplicito, mockup condiviso) — dimensioni scelte per riempire bene
+    // l'altezza fissa della card senza mai uscirne.
+    socialColonnaDivider: { width: 1, backgroundColor: colors.navyLine + '33', marginHorizontal: 4 },
+    socialColonna: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2 },
+    socialColonnaHead: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    socialColonnaLabel: { fontSize: 10, fontWeight: '800', color: colors.slate, textTransform: 'uppercase', letterSpacing: 0.2 },
+    socialColonnaIconaVuota: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.navyCard, alignItems: 'center', justifyContent: 'center' },
+    socialColonnaNome: { fontSize: 12.5, fontWeight: '800', color: colors.navyDeep, maxWidth: '100%' },
+    socialColonnaStat: { fontSize: 10, fontWeight: '600', color: colors.slate },
+    socialInsightPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: Radius.pill, marginTop: 1, maxWidth: '100%' },
+    socialInsightTesto: { fontSize: 9, fontWeight: '800' },
+    socialVuotoTesto: { fontSize: 9.5, fontWeight: '600', color: colors.slate, textAlign: 'center', lineHeight: 12.5, marginTop: 2 },
+    // Messaggio contestuale a tutta scheda (slide 2/3 senza abbastanza dati).
+    slideVuotaWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: Spacing.xl },
+    slideVuotaTitolo: { fontSize: Font.small, fontWeight: '800', color: colors.navyDeep, marginTop: 2 },
+    slideVuotaMessaggio: { fontSize: Font.tiny, textAlign: 'center', lineHeight: 15 },
     // Sfondo scuro FISSO (non colors.navyCard, che è quasi bianco in tema
     // chiaro — fix bug reale: il titolo bianco della scheda multi-prodotto
     // sarebbe finito illeggibile) — stessa "unica superficie scura

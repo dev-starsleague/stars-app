@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ViewStyle, TextStyle, TextInputProps, StyleProp, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ViewStyle, TextStyle, TextInputProps, StyleProp, ActivityIndicator, Image } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SquircleView } from 'react-native-figma-squircle';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing, Font, CORNER_SMOOTHING } from '../constants/theme';
 import { useTheme } from '../lib/theme';
+import { apiUrl } from '../lib/apiClient';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -239,12 +240,22 @@ export function RankBadge({ value, size = 44 }: { value: number; size?: number }
   );
 }
 
-export function Avatar({ name, size = 40, gold }: { name: string; size?: number; gold?: boolean }) {
+// `uri` mostra la foto reale del giocatore quando c'è (fallback automatico
+// alle iniziali colorate se assente/non ancora caricata — mai un placeholder
+// finto). `ringColor` disegna un anello colorato attorno al cerchio (fix
+// utente esplicito: avatar con bordo oro/rosso nella slide "avversari").
+export function Avatar({ name, size = 40, gold, uri, ringColor }: { name: string; size?: number; gold?: boolean; uri?: string | null; ringColor?: string }) {
   const { colors } = useTheme();
   const initials = name.split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase();
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: gold ? colors.gold : colors.navyLine }}>
-      <Text style={{ fontWeight: '800', fontSize: size * 0.36, color: gold ? colors.navyDeep : colors.white }}>{initials}</Text>
+    <View style={{
+      width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: gold ? colors.gold : colors.navyLine, overflow: 'hidden',
+      ...(ringColor ? { borderWidth: 2, borderColor: ringColor } : null),
+    }}>
+      {uri
+        ? <Image source={{ uri: uri.startsWith('http') ? uri : apiUrl(uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        : <Text style={{ fontWeight: '800', fontSize: size * 0.36, color: gold ? colors.navyDeep : colors.white }}>{initials}</Text>}
     </View>
   );
 }
