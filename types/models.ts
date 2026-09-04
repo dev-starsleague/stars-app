@@ -286,6 +286,22 @@ export interface InsightsSociali {
   avversarioPreferito: InsightAvversario | null;
 }
 
+/** Una riga della classifica "RanDuo" — coppie più forti di un centro, per
+ *  sport (fix utente esplicito, tab Classifiche: "classifiche di coppia").
+ *  Solo per sport a doppio: vedi lib/stars.ts SPORT_SINGOLI. */
+export interface RigaClassificaCoppia {
+  giocatore1Id: string;
+  giocatore2Id: string;
+  nome1: string;
+  nome2: string;
+  genere1: Genere | null;
+  genere2: Genere | null;
+  partiteInsieme: number;
+  vittorie: number;
+  sconfitte: number;
+  winRatePercento: number;
+}
+
 export interface ClassificaMensile {
   id: string;
   centro_id: string;

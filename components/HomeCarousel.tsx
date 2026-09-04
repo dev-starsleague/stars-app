@@ -419,14 +419,15 @@ export function HomeCarousel() {
           ))}
         </ScrollView>
 
-        {/* Bottoncino "torna al ranking": sovrapposto in alto a destra,
-            visibile solo quando NON si è già sulla prima scheda (fix
-            utente esplicito). */}
+        {/* Bottoncino "torna al ranking": a metà sul bordo sinistro,
+            centrato verticalmente (fix utente esplicito, "mezza dentro e
+            mezza fuori"), visibile solo quando NON si è già sulla prima
+            scheda. */}
         {pagina > 0 && (
           <Pressable style={s.tornaBtn} onPress={tornaAlRanking} hitSlop={8}>
             <BlurView intensity={30} tint={scheme} style={StyleSheet.absoluteFillObject} />
             <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
-            <Ionicons name="trophy" size={15} color={colors.gold} />
+            <Ionicons name="chevron-back" size={17} color={colors.gold} />
           </Pressable>
         )}
       </View>
@@ -980,10 +981,9 @@ function makeStyles(colors: AppColors, glass: AppGlass, larghezzaScheda: number)
     tileNome: { color: colors.white, fontSize: 9.5, fontWeight: '700', textAlign: 'center' },
     tilePrezzo: { color: colors.goldSoft, fontSize: 9, fontWeight: '800', marginTop: 2 },
     tornaBtn: {
-      position: 'absolute', top: Spacing.sm, right: Spacing.sm, width: 34, height: 34, borderRadius: 17,
+      position: 'absolute', top: '50%', left: -17, marginTop: -17, width: 34, height: 34, borderRadius: 17,
       alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
       borderWidth: 1, borderColor: glass.regularBorder,
-      boxShadow: '0 4px 12px rgba(20,30,48,0.18)',
     } as any,
     dotsRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: Spacing.sm },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.navyLine + '77' },

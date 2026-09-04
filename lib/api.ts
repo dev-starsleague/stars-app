@@ -14,7 +14,7 @@ import type {
   Campo, Centro, ClassificaMensile, EventoCustom, EventoStorico, Giocatore,
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
-  VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita,
+  VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -423,6 +423,67 @@ export async function getInsightsSociali(giocatoreId: string, sport: string): Pr
   };
 }
 
+// Sotto questa soglia una coppia non ha ancora giocato abbastanza insieme
+// per comparire in classifica — stessa idea di MIN_PARTITE_INSIEME sopra,
+// soglia dedicata perché è un'aggregazione di CENTRO (più partite
+// disponibili in totale), non del singolo giocatore.
+const MIN_PARTITE_COPPIA = 3;
+
+/** Classifica "RanDuo" (fix utente esplicito, tab Classifiche: "classifiche
+ *  di coppia... inventati un nome carino") — le coppie di doppio più forti
+ *  di UN centro per uno sport, per numero di vittorie insieme (tie-break
+ *  win rate poi partite). Solo sport a doppio (vedi lib/stars.ts
+ *  SPORT_SINGOLI, applicato dal chiamante). Nessuna tabella dedicata: si
+ *  aggregano le prenotazioni reali del centro, stesso principio di
+ *  getInsightsSociali ma esteso a TUTTE le coppie, non solo alla mia. */
+export async function getClassificaCoppie(centroId: string, sport: string): Promise<RigaClassificaCoppia[]> {
+  if (isMock()) return [];
+  const [{ data: prenotazioni }, { data: campi }, giocatori] = await Promise.all([
+    apiGet<Prenotazione[]>('/prenotazioni', { centro_id: centroId }),
+    apiGet<Campo[]>('/campi', { centro_id: centroId }),
+    getGiocatori(),
+  ]);
+  const nomeById = new Map(giocatori.map((g) => [g.id, `${g.nome} ${g.cognome}`]));
+  const genereById = new Map(giocatori.map((g) => [g.id, g.genere]));
+  const campoById = new Map((campi ?? []).map((c) => [c.id, c]));
+  const rilevanti = (prenotazioni ?? []).filter((p) =>
+    p.tipo !== 'lezione' && p.risultato?.vincitore && p.giocatori_extra?.length === 4
+    && p.campo_id && campoById.get(p.campo_id)?.sport === sport
+  );
+
+  type Aggregato = { partite: number; vittorie: number; sconfitte: number };
+  const coppie = new Map<string, Aggregato>(); // chiave: "id1_id2" (ordinati, per non contare A+B e B+A separati)
+
+  for (const p of rilevanti) {
+    const squadraA = p.squadre?.a ?? p.giocatori_extra.slice(0, 2);
+    const squadraB = p.squadre?.b ?? p.giocatori_extra.slice(2);
+    const vincitore = p.risultato!.vincitore;
+    for (const squadra of [squadraA, squadraB]) {
+      if (squadra.length !== 2) continue;
+      const chiave = [...squadra].sort().join('_');
+      const vinta = squadra === squadraA ? vincitore === 'A' : vincitore === 'B';
+      const riga = coppie.get(chiave) ?? { partite: 0, vittorie: 0, sconfitte: 0 };
+      riga.partite++;
+      if (vinta) riga.vittorie++; else riga.sconfitte++;
+      coppie.set(chiave, riga);
+    }
+  }
+
+  const righe: RigaClassificaCoppia[] = [];
+  for (const [chiave, agg] of coppie) {
+    if (agg.partite < MIN_PARTITE_COPPIA) continue;
+    const [id1, id2] = chiave.split('_');
+    righe.push({
+      giocatore1Id: id1, giocatore2Id: id2,
+      nome1: nomeById.get(id1) ?? 'Giocatore', nome2: nomeById.get(id2) ?? 'Giocatore',
+      genere1: genereById.get(id1) ?? null, genere2: genereById.get(id2) ?? null,
+      partiteInsieme: agg.partite, vittorie: agg.vittorie, sconfitte: agg.sconfitte,
+      winRatePercento: Math.round((agg.vittorie / agg.partite) * 100),
+    });
+  }
+  return righe.sort((a, b) => b.vittorie - a.vittorie || b.winRatePercento - a.winRatePercento || b.partiteInsieme - a.partiteInsieme);
+}
+
 // ---------- Ranking ----------
 export async function getRanking(sport: string = 'Padel'): Promise<(RankingGiocatore & { giocatore?: Giocatore })[]> {
   if (isMock()) {
@@ -499,11 +560,10 @@ export async function getRankingAttuale(giocatoreId: string, sport: string): Pro
  *  determinato centro"). ClassificaMensile è già scoped per centro_id nel
  *  backend (una riga per centro/sport/giocatore/mese/genere), qui si passa
  *  solo il filtro in più al generico. */
-export async function getClassifica(genere: 'M' | 'F', sport: string = 'Padel', centroId?: string): Promise<ClassificaMensile[]> {
-  const mese = meseCorrente();
+export async function getClassifica(genere: 'M' | 'F', sport: string = 'Padel', centroId?: string, mese: string = meseCorrente()): Promise<ClassificaMensile[]> {
   if (isMock()) {
     return mock.mockClassifica
-      .filter((c) => c.genere === genere && c.sport === sport && (!centroId || c.centro_id === centroId))
+      .filter((c) => c.genere === genere && c.sport === sport && (!centroId || c.centro_id === centroId) && c.mese === mese)
       .sort(ordinaClassifica);
   }
   const params: Record<string, string> = { mese, genere, sport };
@@ -522,7 +582,7 @@ export interface PosizioneClassifica { posizione: number; totale: number; valore
 /** Giocatori affiliati a un centro (righe giocatori_centri) — usato per
  *  restringere una classifica ranking "di un centro" o "di una zona" ai
  *  soli giocatori di quel/quei centri (fix utente esplicito, widget Home). */
-async function getMembriCentri(centroIds: string[]): Promise<Set<string>> {
+export async function getMembriCentri(centroIds: string[]): Promise<Set<string>> {
   if (isMock() || centroIds.length === 0) return new Set();
   const risultati = await Promise.all(centroIds.map((id) => apiGet<any[]>('/giocatori-centri', { centro_id: id })));
   const ids = new Set<string>();
@@ -544,6 +604,36 @@ export async function posizioneRankingGlobale(giocatoreId: string, sport: string
   const posizione = pari.findIndex((r) => r.giocatore_id === giocatoreId);
   if (posizione < 0) return null;
   return { posizione: posizione + 1, totale: pari.length, valore: io.ranking };
+}
+
+export interface FiltroClassificaRanking {
+  tipo: 'globale' | 'centro' | 'zona';
+  centroId?: string;
+  zonaTipo?: 'regione' | 'provincia';
+  zonaValore?: string;
+}
+
+/** Classifica Ranking/RanQueen COMPLETA (non solo la mia posizione, a
+ *  differenza di posizioneRankingGlobale/Centro/Zona sopra) — tab
+ *  "Classifiche" dell'app, sezione 1 (fix utente esplicito: "classifica per
+ *  Ranking (maschile) e RanQueen (femminile), filtrabile per zona
+ *  geografica, centri e per categoria"). Il filtro per categoria si applica
+ *  lato chiamante (vedi lib/stars.ts categoriaRanking), qui solo
+ *  genere+ambito perché sono gli unici che richiedono un fetch aggiuntivo. */
+export async function getClassificaRanking(sport: string, genere: Genere, filtro: FiltroClassificaRanking): Promise<(RankingGiocatore & { giocatore?: Giocatore })[]> {
+  const righe = await getRanking(sport);
+  const pari = righe.filter((r) => r.giocatore?.genere === genere);
+  if (filtro.tipo === 'centro' && filtro.centroId) {
+    const membri = await getMembriCentri([filtro.centroId]);
+    return pari.filter((r) => membri.has(r.giocatore_id));
+  }
+  if (filtro.tipo === 'zona' && filtro.zonaTipo && filtro.zonaValore) {
+    const centri = await getCentri();
+    const centriZona = centri.filter((c) => (filtro.zonaTipo === 'regione' ? c.regione : c.provincia) === filtro.zonaValore);
+    const membri = await getMembriCentri(centriZona.map((c) => c.id));
+    return pari.filter((r) => membri.has(r.giocatore_id));
+  }
+  return pari; // "globale" — già ordinato da getRanking
 }
 
 /** Variazione della posizione nel ranking nazionale negli ultimi `giorni`

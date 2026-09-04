@@ -45,6 +45,30 @@ export const FASCE_ORDINATE: Fascia[] = ['Spark', '1★', '2★', '3★', '4★'
 // (vedi lib/sport.tsx).
 export const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis'];
 
+// Sport individuali: niente doppio, quindi niente classifica di coppia
+// "RanDuo" (fix utente esplicito, tab Classifiche: "per il Tennis e gli
+// sport singolari non mettere le classifiche di coppia"). Elenco esplicito
+// (non dedotto dai dati) così un nuovo sport a doppio funziona da subito
+// anche prima che esistano partite, e uno singolare non fa comparire la
+// scheda per un attimo prima che i dati confermino che è vuota.
+export const SPORT_SINGOLI = ['Tennis'];
+
+// Categoria del giocatore per il PSL Ranking Engine — stessa identica
+// formula del gestionale (stars-system/src/routes/classifiche/+page.svelte
+// categoriaRanking), portata qui 1:1 per restare coerenti tra le due app:
+// "mai valutato" (nessuna riga in ranking-giocatori per quello sport) è
+// diverso da un ranking basso genuinamente valutato.
+export function categoriaRanking(valore: number | null | undefined): string {
+  if (valore == null) return 'Non valutato';
+  if (valore < 1) return 'Spark';
+  return `${Math.min(8, Math.floor(valore))}⭐`;
+}
+// Bande selezionabili nel filtro "categoria" della classifica Ranking/
+// RanQueen (fix utente esplicito) — stesso ordine dal più forte al più
+// debole, "Non valutato" per ultimo perché non è davvero una fascia di
+// livello.
+export const CATEGORIE_RANKING = ['8⭐', '7⭐', '6⭐', '5⭐', '4⭐', '3⭐', '2⭐', '1⭐', 'Spark', 'Non valutato'];
+
 export const BADGE_CATALOGO = [
   { id: 'b1', nome: 'Prima partita', descrizione: 'Ha giocato la sua prima partita PSL', icona: '🎾' },
   { id: 'b2', nome: 'Prima vittoria', descrizione: 'Ha vinto la sua prima partita', icona: '🏆' },
