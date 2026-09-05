@@ -124,13 +124,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // (fix utente esplicito, ribadito più volte: finché non esiste un vero
   // login, questo bottone è l'unico modo di entrare — deve comunque parlare
   // col backend vero, non con dati finti). Se un backend è raggiungibile,
-  // "demo" diventa semplicemente "accedi come il primo giocatore reale
-  // censito" — stesso identico percorso di un signIn vero, dati reali,
-  // scritture reali sul planner. I dati finti (mockMe) restano SOLO
-  // l'ultima spiaggia: nessun backend configurato/raggiungibile, o nessun
-  // giocatore ancora censito nel gestionale.
+  // "demo" accede come l'account reale del giocatore che sta sviluppando/
+  // testando l'app (fix utente esplicito: "a questo account voglio
+  // accedere cliccando modalità demo") — stesso identico percorso di un
+  // signIn vero, dati reali, scritture reali sul planner. Se quell'email
+  // non si trova (backend diverso, es. altro ambiente) si ripiega sul
+  // primo giocatore censito, così il bottone resta comunque utilizzabile.
+  // I dati finti (mockMe) restano SOLO l'ultima spiaggia: nessun backend
+  // configurato/raggiungibile, o nessun giocatore ancora censito.
+  const EMAIL_DEMO_PREFERITA = 'panegosriccardo@gmail.com';
   const enterDemo = async () => {
     if (isApiConfigured) {
+      const { data: mio } = await apiGet<any[]>('/giocatori', { email: EMAIL_DEMO_PREFERITA });
+      const preferito = mio && mio.length > 0 ? mio[0] : null;
+      if (preferito) {
+        setDemoDataMode(false);
+        setDemoMode(false);
+        await salvaGiocatoreId(preferito.id);
+        setSession({ giocatoreId: preferito.id });
+        await caricaProfilo(preferito.id);
+        return;
+      }
       const { data } = await apiGet<any[]>('/giocatori');
       const primo = data && data.length > 0 ? data[0] : null;
       if (primo) {

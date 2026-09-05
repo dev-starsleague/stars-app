@@ -15,6 +15,7 @@ import type {
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
+  NoleggioProdotto, NoleggioPrestito, RoundPartita,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -184,9 +185,12 @@ export async function creaPrenotazione(input: {
   // sotto) — usati anche per derivare formato singolo/doppio, stessa
   // convenzione del gestionale (2 giocatori → singolo, 4 → doppio).
   invitati?: string[];
+  // confine esplicito squadra A/B scelto nello schermo "Invita giocatori"
+  // (coppie card, fix utente esplicito) — stesso campo JSON del gestionale.
+  squadre?: { a: string[]; b: string[] };
 }): Promise<{ ok: boolean; error?: string }> {
   if (isMock() || eIlGiocatoreDemo(input.creata_da)) return { ok: true };
-  const { invitati, ...resto } = input;
+  const { invitati, squadre, ...resto } = input;
   // chi prenota gioca sempre: senza questo la prenotazione non
   // comparirebbe nel suo storico partite (getPartiteGiocatore filtra su
   // giocatori_extra).
@@ -194,7 +198,7 @@ export async function creaPrenotazione(input: {
   const formato = giocatoriExtra.length === 2 ? 'singolo' : giocatoriExtra.length === 4 ? 'doppio' : null;
   const { error } = await apiPost('/prenotazioni', {
     ...resto, origine: 'app', tipo: 'prenotato', stato: 'completa', stato_pagamento: 'da_pagare',
-    giocatori_extra: giocatoriExtra, formato,
+    giocatori_extra: giocatoriExtra, formato, squadre: squadre ?? null,
   });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
@@ -202,6 +206,135 @@ export async function creaPrenotazione(input: {
 export async function annullaPrenotazione(id: string): Promise<void> {
   if (isMock()) return;
   await apiDelete(`/prenotazioni/${id}`);
+}
+
+/** Aggiorna una prenotazione già esistente — qui usato solo per
+ *  `pagamenti`/`stato_pagamento` (pagaQuotaPrenotazione/pagaInteroCampo
+ *  sotto). Il PATCH del backend sostituisce interi campi JSON, non fa
+ *  merge (stesso comportamento di updateProfilo per `profilo`): chi
+ *  chiama deve passare la mappa `pagamenti` già unita con quella attuale. */
+export async function updatePrenotazione(id: string, patch: Partial<Pick<Prenotazione, 'pagamenti' | 'stato_pagamento' | 'risultato'>>): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPatch(`/prenotazioni/${id}`, patch);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Noleggio (attrezzatura) ----------
+
+/** Prodotti noleggiabili attivi di un centro — il giocatore può
+ *  assegnarsene uno dalla propria prenotazione (fix utente esplicito), MAI
+ *  restituirlo: quello resta un'azione manuale dello staff che verifica
+ *  fisicamente il rientro (vedi NoleggioPrestito in types/models.ts). */
+export async function getProdottiNoleggio(centroId: string): Promise<NoleggioProdotto[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<NoleggioProdotto[]>('/noleggio-prodotti', { centro_id: centroId, attivo: true });
+  return data ?? [];
+}
+
+/** Prestiti di un centro (di norma filtrati su una prenotazione): la
+ *  disponibilità di un prodotto NON è una colonna, va calcolata sottraendo
+ *  a `quantita_totale` la somma delle `quantita` dei prestiti 'in_prestito'
+ *  di quel prodotto — stesso principio del gestionale. */
+export async function getPrestitiNoleggio(filtri: { centro_id: string; prenotazione_id?: string; stato?: string }): Promise<NoleggioPrestito[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<NoleggioPrestito[]>('/noleggio-prestiti', filtri);
+  return data ?? [];
+}
+
+/** Assegna un'unità di un prodotto al giocatore per l'esatta durata della
+ *  prenotazione — stesso endpoint atomico del gestionale (verifica
+ *  disponibilità e crea il prestito in un solo commit lato server, vedi
+ *  backend/app/routers/noleggio.py:assegna_noleggio). Legato a una
+ *  prenotazione: il costo NON si incassa qui, si somma alla quota del
+ *  giocatore e si paga insieme al resto — vedi quotaGiocatore/
+ *  pagaQuotaPrenotazione sotto, stesso principio del planner. */
+export async function assegnaNoleggio(input: {
+  centroId: string; prodottoId: string; giocatoreId: string; prenotazioneId: string; durataMinuti: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPost('/noleggio-prestiti/assegna', {
+    p_prodotto: input.prodottoId, p_quantita: 1, p_giocatore: input.giocatoreId,
+    p_prenotazione: input.prenotazioneId, p_durata: input.durataMinuti,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Pagamento prenotazione ----------
+
+/** Accredita/addebita Star Coin — stesso endpoint atomico del gestionale
+ *  (POST /coin-transazioni/movimento: aggiorna saldo e registra la
+ *  transazione in un solo commit server-side). importo negativo = addebito;
+ *  il backend rifiuta da sé se il saldo non basta. */
+async function movimentoCoin(input: { centroId: string; giocatoreId: string; importo: number; motivo: string }): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPost('/coin-transazioni/movimento', {
+    centro_id: input.centroId, giocatore_id: input.giocatoreId, importo: input.importo,
+    riferimento: { motivo: input.motivo },
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Quota di un giocatore per una prenotazione: prezzo campo diviso i
+ *  giocatori coinvolti, più l'eventuale noleggio assegnato a lui — stessa
+ *  formula del gestionale (importoPerGiocatore + sommaNoleggioGiocatore),
+ *  NON modificabile a mano: si può solo segnare/pagare. */
+export function quotaGiocatore(p: Prenotazione, giocatoreId: string, prestiti: NoleggioPrestito[]): number {
+  const nGiocatori = p.giocatori_extra.length || 1;
+  const base = p.prezzo / nGiocatori;
+  const noleggio = prestiti
+    .filter((pr) => pr.prenotazione_id === p.id && pr.giocatore_id === giocatoreId && pr.stato === 'in_prestito')
+    .reduce((s, pr) => s + pr.costo, 0);
+  return Math.round((base + noleggio) * 100) / 100;
+}
+
+/** Il giocatore paga la propria quota — stesso schema NON atomico del
+ *  gestionale (prima il movimento Star Coin, solo se va a buon fine si
+ *  segna pagato: mai al contrario, altrimenti risulterebbe pagato senza
+ *  che il saldo si sia mosso). In 'euro' non c'è una passerella di
+ *  pagamento reale in questo progetto: resta da saldare fisicamente al
+ *  centro, si segna solo come tracciato — stesso principio già in uso per
+ *  acquistaProdotto/acquistaAbbonamento. */
+export async function pagaQuotaPrenotazione(input: {
+  prenotazione: Prenotazione; giocatoreId: string; importo: number; metodo: 'coin' | 'euro';
+}): Promise<{ ok: boolean; error?: string }> {
+  const { prenotazione: p, giocatoreId, importo, metodo } = input;
+  if (isMock()) return { ok: true };
+  if (metodo === 'coin') {
+    const esito = await movimentoCoin({ centroId: p.centro_id, giocatoreId, importo: -importo, motivo: 'pagamento_prenotazione' });
+    if (!esito.ok) return esito;
+  }
+  // "euro" non ha un metodo di cassa reale nel gestionale (contanti/
+  // elettronico/bonifico presuppongono tutti che lo staff abbia
+  // fisicamente incassato) — si scrive "non_categorizzato", stessa
+  // etichetta già usata da acquistaProdotto/acquistaAbbonamento per un
+  // pagamento self-service senza passerella, riconoscibile allo stesso
+  // modo lato gestionale.
+  const metodoScritto: 'coin' | 'non_categorizzato' = metodo === 'coin' ? 'coin' : 'non_categorizzato';
+  const pagamenti = { ...(p.pagamenti ?? {}), [giocatoreId]: { importo, pagato: true, metodo: metodoScritto } };
+  const tuttiPagati = p.giocatori_extra.every((id) => pagamenti[id]?.pagato);
+  return updatePrenotazione(p.id, { pagamenti, stato_pagamento: tuttiPagati ? 'saldato' : 'da_pagare' });
+}
+
+/** Un giocatore paga TUTTE le quote non ancora saldate (comprese quelle
+ *  altrui) in un'unica soluzione dal proprio saldo/metodo — fix utente
+ *  esplicito "può pagare la propria quota, o anche tutto il campo". */
+export async function pagaInteroCampo(input: {
+  prenotazione: Prenotazione; pagatoDa: string; metodo: 'coin' | 'euro'; prestiti: NoleggioPrestito[];
+}): Promise<{ ok: boolean; error?: string }> {
+  const { prenotazione: p, pagatoDa, metodo, prestiti } = input;
+  if (isMock()) return { ok: true };
+  const nonPagati = p.giocatori_extra.filter((id) => !p.pagamenti?.[id]?.pagato);
+  if (nonPagati.length === 0) return { ok: true };
+  const quote = new Map(nonPagati.map((id) => [id, quotaGiocatore(p, id, prestiti)]));
+  const totale = Math.round([...quote.values()].reduce((s, v) => s + v, 0) * 100) / 100;
+  if (metodo === 'coin') {
+    const esito = await movimentoCoin({ centroId: p.centro_id, giocatoreId: pagatoDa, importo: -totale, motivo: 'pagamento_prenotazione_completo' });
+    if (!esito.ok) return esito;
+  }
+  const metodoScritto: 'coin' | 'non_categorizzato' = metodo === 'coin' ? 'coin' : 'non_categorizzato';
+  const pagamenti = { ...(p.pagamenti ?? {}) };
+  for (const id of nonPagati) pagamenti[id] = { importo: quote.get(id)!, pagato: true, metodo: metodoScritto };
+  return updatePrenotazione(p.id, { pagamenti, stato_pagamento: 'saldato' });
 }
 
 /** Registra il risultato di una partita già giocata — stesso endpoint del
@@ -215,6 +348,70 @@ export async function salvaRisultatoPartita(prenotazioneId: string, payload: {
 }): Promise<{ ok: boolean; error?: string }> {
   if (isMock()) return { ok: true };
   const { error } = await apiPost(`/prenotazioni/${prenotazioneId}/risultato`, payload);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Round (partita con cambio di coppie, formato Americano) ----------
+// Porting 1:1 del gestionale (fix utente esplicito "prendi pari pari
+// quello che abbiamo fatto sul gestionale"): gli stessi 4 giocatori si
+// ridividono in coppie diverse a ogni round, ognuno vale come una partita
+// a sé per ranking/classifica — persistenza separata dal `risultato`
+// whole-booking della prenotazione (backend/app/routers/round_partita.py).
+
+export async function getRounds(prenotazioneId: string): Promise<RoundPartita[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<RoundPartita[]>('/round-partita', { prenotazione_id: prenotazioneId });
+  return (data ?? []).sort((a, b) => a.ordine - b.ordine);
+}
+
+export async function creaRound(input: {
+  prenotazioneId: string; ordine: number; squadre: { a: string[]; b: string[] };
+}): Promise<{ ok: boolean; data?: RoundPartita; error?: string }> {
+  if (isMock()) {
+    // Il chiamante ha bisogno di un id vero per gestire lo stato locale
+    // (set inseriti, chip squadra) round per round: qui non c'è un
+    // backend che ne assegni uno, quindi se ne fabbrica uno solo
+    // client-side, mai persistito.
+    return {
+      ok: true,
+      data: { id: `round-demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, prenotazione_id: input.prenotazioneId, ordine: input.ordine, squadre: input.squadre, risultato: null },
+    };
+  }
+  const { data, error } = await apiPost<RoundPartita>('/round-partita', {
+    prenotazione_id: input.prenotazioneId, ordine: input.ordine, squadre: input.squadre,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true, data: data ?? undefined };
+}
+
+/** Aggiorna solo le squadre di un round — stesso PATCH ad ogni tap sui
+ *  chip giocatore del gestionale (nessun bottone "salva squadre" a
+ *  parte). */
+export async function updateRound(roundId: string, squadre: { a: string[]; b: string[] }): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPatch(`/round-partita/${roundId}`, { squadre });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Non ha una guardia server-side contro l'eliminazione di un round già
+ *  giocato (stesso comportamento del gestionale, che semplicemente non
+ *  offre il pulsante in quel caso) — chi chiama deve rispettare la stessa
+ *  regola lato UI. */
+export async function eliminaRound(roundId: string): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiDelete(`/round-partita/${roundId}`);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Registra il risultato di UN round — stesso principio di
+ *  salvaRisultatoPartita, ma le squadre vengono sempre da `round.squadre`
+ *  (mai da un fallback posizionale). Un round senza vincitore (punteggio
+ *  pari) non matura punti classifica: a differenza del risultato whole-
+ *  booking, qui il backend lo rifiuta — vincitore è obbligatorio. */
+export async function salvaRisultatoRound(roundId: string, payload: {
+  sets: { a: number; b: number; tb?: boolean }[]; vincitore: 'A' | 'B'; sport: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPost(`/round-partita/${roundId}/risultato`, { ...payload, in_evento: false });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 

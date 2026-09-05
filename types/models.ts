@@ -150,18 +150,79 @@ export interface Prenotazione {
   // a1/a2 poi b1/b2, per prenotazioni create prima che questo campo esistesse)
   squadre?: { a: string[]; b: string[] } | null;
   creata_da?: string | null;
+  // quota per giocatore coinvolto: { [giocatore_id]: {importo, pagato} } —
+  // stesso campo JSON del gestionale (backend/app/models/prenotazione.py),
+  // scritto/letto identico da entrambi.
+  pagamenti?: Record<string, PagamentoGiocatore>;
   // join lato client
   campo?: Campo;
   giocatori?: Giocatore[];
 }
 
+// `metodo` è testo libero lato backend (contanti|elettronico|bonifico|
+// abbonamento|coin|misto|non_categorizzato...): qui limitato ai due che
+// l'app può effettivamente scrivere (vedi pagaQuotaPrenotazione).
+export interface PagamentoGiocatore { importo: number; pagato: boolean; metodo?: 'coin' | 'non_categorizzato' }
+
+/** Prodotto noleggiabile del centro (racchette, palline...) — catalogo
+ *  scoped per centro, stesso modello del gestionale
+ *  (backend/app/models/noleggio.py). La disponibilità NON è una colonna:
+ *  si calcola lato client come quantita_totale meno le righe
+ *  NoleggioPrestito con stato 'in_prestito' di quel prodotto. */
+export interface NoleggioProdotto {
+  id: string;
+  centro_id: string;
+  nome: string;
+  immagine_url: string | null;
+  costo_60: number;
+  costo_90: number;
+  quantita_totale: number;
+  attivo: boolean;
+}
+
+/** Un prestito di noleggio assegnato a un giocatore (eventualmente legato
+ *  a una prenotazione) — stesso modello del gestionale. `stato` passa a
+ *  'restituito' SOLO per azione manuale dello staff al centro, mai
+ *  dall'app (fix utente esplicito: "non può restituire all'inventario"). */
+export interface NoleggioPrestito {
+  id: string;
+  centro_id: string;
+  prodotto_id: string;
+  quantita: number;
+  giocatore_id: string | null;
+  prenotazione_id: string | null;
+  durata_minuti: number;
+  costo: number;
+  metodo_pagamento: string | null;
+  riferimento_pagamento: string | null;
+  data_restituzione: string | null;
+  stato: 'in_prestito' | 'restituito';
+}
+
 export interface Risultato {
   sets: { a: number; b: number; tb?: boolean }[];
-  vincitore: 'A' | 'B';
+  // null = punteggio pari (es. 1-1 senza terzo set): si salva comunque il
+  // punteggio, ma senza vincitore/perdente né punti classifica — stesso
+  // principio del gestionale (src/routes/+page.svelte:salvaRisultato).
+  vincitore: 'A' | 'B' | null;
   set_a?: number;
   set_b?: number;
   game_a?: number;
   game_b?: number;
+}
+
+/** Un round di una partita "cambio di coppie" (formato Americano, fix
+ *  utente esplicito "prendi pari pari quello che abbiamo fatto sul
+ *  gestionale") — gli stessi 4 giocatori della prenotazione si ridividono
+ *  in coppie diverse a ogni round, ognuno vale come una partita a sé per
+ *  ranking/classifica. Persistenza separata dal `risultato` "whole-
+ *  booking" della Prenotazione (backend/app/models/round_partita.py). */
+export interface RoundPartita {
+  id: string;
+  prenotazione_id: string;
+  ordine: number;
+  squadre: { a: string[]; b: string[] };
+  risultato: Risultato | null;
 }
 
 export interface RankingGiocatore {

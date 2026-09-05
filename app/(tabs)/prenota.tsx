@@ -12,6 +12,7 @@ import {
 import { avvisa } from '../../lib/avviso';
 import { orariSlots } from '../../lib/orari';
 import { calcPrezzoCampo } from '../../lib/prezziCampi';
+import { SPORT_SINGOLI } from '../../lib/stars';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, H1, H2, IconBadge, Muted, Button, Avatar, Input } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
@@ -19,7 +20,12 @@ import { useSport } from '../../lib/sport';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { Campo, Centro, Giocatore, Prenotazione } from '../../types/models';
 
-const MAX_GIOCATORI = 4;
+// Squadra A/B con 2 slot per lato negli sport a doppio (a1/a2/b1/b2, stessa
+// convenzione del gestionale), 1 slot per lato in quelli singolari
+// (SPORT_SINGOLI) — "Tu" occupa sempre a1, fisso.
+type SlotId = 'a1' | 'a2' | 'b1' | 'b2';
+const SLOTS_DOPPIO: SlotId[] = ['a1', 'a2', 'b1', 'b2'];
+const SLOTS_SINGOLO: SlotId[] = ['a1', 'b1'];
 
 const GIORNI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
@@ -185,17 +191,18 @@ export default function Prenota() {
     }),
     [campiSport, occupati, giocatoreImpegnato]);
 
-  // ---- invita giocatori: stessa identica logica di ricerca/suggerimento
-  // del gestionale (src/routes/+page.svelte, picker della "Nuova
-  // prenotazione") — fix utente esplicito "deve funzionare ESATTAMENTE come
-  // sul gestionale". Ricerca client-side su nome+cognome, nessun debounce
-  // (stesso filtro in-memory); a query vuota mostra i "suggeriti per
-  // equilibrio" (ranking più vicino alla media di chi è già invitato,
-  // stesso genere se tutti quelli scelti condividono un genere, solo per
-  // Padel) — quando invece non c'è ancora nessun invitato non c'è una
-  // "media" da calcolare, e lì si parte dagli amici (il gestionale non ha
-  // un concetto di amici, l'app sì: colma esattamente quel vuoto iniziale).
-  const [invitati, setInvitati] = useState<Giocatore[]>([]);
+  // ---- invita giocatori: squadre A/B come nel gestionale (src/routes/
+  // +page.svelte, COPPIA A/COPPIA B della "Nuova prenotazione") — fix
+  // utente esplicito "vorrei fosse più simile al gestionale". "Tu" fisso
+  // in a1; gli altri slot si riempiono toccandoli, con la stessa identica
+  // logica di ricerca/suggerimento di prima (ricerca client-side su
+  // nome+cognome, "suggeriti per equilibrio" — ranking più vicino alla
+  // media di chi è già scelto, stesso genere se condiviso, solo Padel — e
+  // amici quando non c'è ancora nessuno scelto oltre a "Tu").
+  const doppio = !SPORT_SINGOLI.includes(sportAttivo);
+  const slotsRichiesti = doppio ? SLOTS_DOPPIO : SLOTS_SINGOLO;
+  const [formazione, setFormazione] = useState<Record<SlotId, Giocatore | null>>({ a1: null, a2: null, b1: null, b2: null });
+  const [slotAttivo, setSlotAttivo] = useState<SlotId | null>(null);
   const [queryInvita, setQueryInvita] = useState('');
   const [tuttiGiocatori, setTuttiGiocatori] = useState<Giocatore[]>([]);
   const [rankingMap, setRankingMap] = useState<Map<string, number>>(new Map());
@@ -209,23 +216,27 @@ export default function Prenota() {
     if (!me) return;
     getAmici(me.id).then((righe) => setAmici(righe.map((a) => a.amico).filter((g): g is Giocatore => Boolean(g))));
   }, [me]);
-  useEffect(() => { setInvitati([]); setQueryInvita(''); }, [slotSel]);
+  useEffect(() => { setFormazione({ a1: me, a2: null, b1: null, b2: null }); setSlotAttivo(null); setQueryInvita(''); }, [slotSel, me]);
+
+  const giocatoriScelti = useMemo(
+    () => slotsRichiesti.map((id) => formazione[id]).filter((g): g is Giocatore => !!g),
+    [formazione, slotsRichiesti]
+  );
 
   const risultatiCerca = useMemo(() => {
     const q = queryInvita.trim().toLowerCase();
-    if (!q || !me) return [];
-    const esclusi = new Set([me.id, ...invitati.map((g) => g.id)]);
+    if (!q) return [];
+    const esclusi = new Set(giocatoriScelti.map((g) => g.id));
     return tuttiGiocatori
       .filter((g) => !esclusi.has(g.id) && `${g.nome} ${g.cognome ?? ''}`.toLowerCase().includes(q))
       .slice(0, 30);
-  }, [queryInvita, tuttiGiocatori, invitati, me]);
+  }, [queryInvita, tuttiGiocatori, giocatoriScelti]);
 
   const suggeritiEquilibrio = useMemo(() => {
-    if (queryInvita.trim() || sportAttivo !== 'Padel' || invitati.length === 0 || !me) return [];
-    const scelti = [me, ...invitati];
-    const media = scelti.reduce((s2, g) => s2 + (rankingMap.get(g.id) ?? 0), 0) / scelti.length;
-    const esclusi = new Set(scelti.map((g) => g.id));
-    const generi = new Set(scelti.map((g) => g.genere).filter(Boolean));
+    if (queryInvita.trim() || sportAttivo !== 'Padel' || giocatoriScelti.length === 0) return [];
+    const media = giocatoriScelti.reduce((s2, g) => s2 + (rankingMap.get(g.id) ?? 0), 0) / giocatoriScelti.length;
+    const esclusi = new Set(giocatoriScelti.map((g) => g.id));
+    const generi = new Set(giocatoriScelti.map((g) => g.genere).filter(Boolean));
     const genereRichiesto = generi.size === 1 ? [...generi][0] : null;
     return tuttiGiocatori
       .filter((g) => !esclusi.has(g.id))
@@ -234,24 +245,59 @@ export default function Prenota() {
       .sort((a, b) => a.diff - b.diff)
       .slice(0, 5)
       .map((x) => x.g);
-  }, [queryInvita, sportAttivo, invitati, me, tuttiGiocatori, rankingMap]);
+  }, [queryInvita, sportAttivo, giocatoriScelti, tuttiGiocatori, rankingMap]);
 
   const amiciDisponibili = useMemo(() => {
-    const esclusi = new Set([me?.id, ...invitati.map((g) => g.id)]);
+    const esclusi = new Set(giocatoriScelti.map((g) => g.id));
     return amici.filter((g) => !esclusi.has(g.id));
-  }, [amici, invitati, me]);
+  }, [amici, giocatoriScelti]);
 
   const mostraSuggeriti = !queryInvita.trim() && suggeritiEquilibrio.length > 0;
 
   const invita = (g: Giocatore) => {
-    if (invitati.length + 1 >= MAX_GIOCATORI) {
-      avvisa('Limite raggiunto', `Puoi invitare al massimo ${MAX_GIOCATORI - 1} giocatori oltre a te.`);
-      return;
-    }
-    setInvitati((cur) => [...cur, g]);
+    if (!slotAttivo) return;
+    setFormazione((cur) => ({ ...cur, [slotAttivo]: g }));
+    setSlotAttivo(null);
     setQueryInvita('');
   };
-  const rimuoviInvitato = (id: string) => setInvitati((cur) => cur.filter((g) => g.id !== id));
+  const rimuoviSlot = (id: SlotId) => setFormazione((cur) => ({ ...cur, [id]: null }));
+
+  const ranking = useCallback((g: Giocatore) => rankingMap.get(g.id), [rankingMap]);
+  const mediaSquadra = useCallback((lato: 'a' | 'b') => {
+    const ids: SlotId[] = lato === 'a' ? ['a1', 'a2'] : ['b1', 'b2'];
+    const giocatori = ids.map((id) => formazione[id]).filter((g): g is Giocatore => !!g);
+    if (giocatori.length === 0 || sportAttivo !== 'Padel') return null;
+    const valori = giocatori.map((g) => rankingMap.get(g.id) ?? 0);
+    return valori.reduce((s2, v) => s2 + v, 0) / valori.length;
+  }, [formazione, rankingMap, sportAttivo]);
+
+  // "⚖️ Ottimizza abbinamento" (fix utente esplicito, come nel gestionale):
+  // tra i 3 modi di dividere i 4 giocatori scelti in 2 coppie, sceglie
+  // quello con la differenza minima tra le medie ranking delle due
+  // squadre, poi ordina ogni coppia mettendo il DX prima del SX (stessa
+  // euristica di ordinaPerPosizione in +page.svelte).
+  const ottimizzaAbbinamento = () => {
+    const [p0, p1, p2, p3] = slotsRichiesti.map((id) => formazione[id]) as Giocatore[];
+    if (!p0 || !p1 || !p2 || !p3) return;
+    const rk = (g: Giocatore) => rankingMap.get(g.id) ?? 0;
+    const opzioni: [[Giocatore, Giocatore], [Giocatore, Giocatore]][] = [
+      [[p0, p1], [p2, p3]],
+      [[p0, p2], [p1, p3]],
+      [[p0, p3], [p1, p2]],
+    ];
+    let scelta = opzioni[0];
+    let deltaMin = Infinity;
+    for (const opz of opzioni) {
+      const mediaA = (rk(opz[0][0]) + rk(opz[0][1])) / 2;
+      const mediaB = (rk(opz[1][0]) + rk(opz[1][1])) / 2;
+      const delta = Math.abs(mediaA - mediaB);
+      if (delta < deltaMin) { deltaMin = delta; scelta = opz; }
+    }
+    const ordina = (coppia: [Giocatore, Giocatore]): [Giocatore, Giocatore] =>
+      (coppia[0].posizione === 'sinistra' && coppia[1].posizione !== 'sinistra') ? [coppia[1], coppia[0]] : coppia;
+    const [a, b] = [ordina(scelta[0]), ordina(scelta[1])];
+    setFormazione({ a1: a[0], a2: a[1], b1: b[0], b2: b[1] });
+  };
 
   const tapSlot = (slot: string) => {
     if (campiLiberi(slot).length === 0) {
@@ -275,11 +321,15 @@ export default function Prenota() {
     const durata = durataCampo(campoSel);
     const fine = addMin(slotSel, durata);
     const prezzo = calcPrezzoCampo(campoSel, slotSel, fine);
+    const squadraA = slotsRichiesti.filter((id) => id[0] === 'a').map((id) => formazione[id]).filter((g): g is Giocatore => !!g);
+    const squadraB = slotsRichiesti.filter((id) => id[0] === 'b').map((id) => formazione[id]).filter((g): g is Giocatore => !!g);
+    const invitati = giocatoriScelti.filter((g) => g.id !== me.id);
     setSaving(true);
     const res = await creaPrenotazione({
       centro_id: centroSel.id, campo_id: campoSel.id, creata_da: me.id,
       data: dataISO, inizio: slotSel, fine, prezzo,
       invitati: invitati.map((g) => g.id),
+      squadre: { a: squadraA.map((g) => g.id), b: squadraB.map((g) => g.id) },
     });
     setSaving(false);
     if (res.ok) {
@@ -290,6 +340,11 @@ export default function Prenota() {
       avvisa('Errore', res.error ?? 'Impossibile prenotare.');
     }
   };
+
+  // Quota stimata a testa nello schermo "Invita giocatori": il prezzo si
+  // aggiorna live man mano che si riempiono gli slot, prima ancora che la
+  // prenotazione esista (calcolo lato client, nessuna chiamata server).
+  const prezzoStimato = campoSel && slotSel ? calcPrezzoCampo(campoSel, slotSel, addMin(slotSel, durataCampo(campoSel))) : 0;
 
   // ---- Fase 1: giorno ----
   if (fase === 'giorno') {
@@ -470,25 +525,54 @@ export default function Prenota() {
               </View>
             </View>
 
-            <View style={{ gap: Spacing.sm, marginBottom: Spacing.lg }}>
-              <Card style={s.invitatoRow}>
-                <Avatar name={`${me?.nome ?? ''} ${me?.cognome ?? ''}`} size={36} gold />
-                <Text style={s.invitatoNome}>Tu</Text>
-              </Card>
-              {invitati.map((g) => (
-                <Card key={g.id} style={s.invitatoRow}>
-                  <Avatar name={`${g.nome} ${g.cognome}`} size={36} />
-                  <Text style={s.invitatoNome}>{g.nome} {g.cognome}</Text>
-                  <Pressable onPress={() => rimuoviInvitato(g.id)} hitSlop={8}>
-                    <Ionicons name="close-circle" size={20} color={colors.slate} />
+            {me && (
+              <View style={{ marginBottom: Spacing.lg }}>
+                {doppio && sportAttivo === 'Padel' && (
+                  <Pressable
+                    onPress={ottimizzaAbbinamento} disabled={!slotsRichiesti.every((id) => formazione[id])}
+                    style={[s.ottimizzaBtn, !slotsRichiesti.every((id) => formazione[id]) && { opacity: 0.4 }]}
+                  >
+                    <Text style={s.ottimizzaTesto}>⚖️ Ottimizza abbinamento</Text>
                   </Pressable>
-                </Card>
-              ))}
-            </View>
+                )}
 
-            {invitati.length + 1 < MAX_GIOCATORI ? (
+                <View style={s.squadreRow}>
+                  <SquadraCard titolo="SQUADRA A" media={mediaSquadra('a')} colors={colors} s={s}>
+                    <SlotGiocatore
+                      giocatore={me} fisso ranking={sportAttivo === 'Padel' ? ranking(me) : undefined}
+                      quota={prezzoStimato / giocatoriScelti.length} colors={colors} s={s}
+                    />
+                    {doppio && (formazione.a2
+                      ? <SlotGiocatore
+                          giocatore={formazione.a2} ranking={sportAttivo === 'Padel' ? ranking(formazione.a2) : undefined}
+                          quota={prezzoStimato / giocatoriScelti.length} onRemove={() => rimuoviSlot('a2')} colors={colors} s={s}
+                        />
+                      : <SlotVuoto attivo={slotAttivo === 'a2'} onPress={() => setSlotAttivo('a2')} colors={colors} s={s} />)}
+                  </SquadraCard>
+                  <SquadraCard titolo="SQUADRA B" media={mediaSquadra('b')} evidenziata colors={colors} s={s}>
+                    {formazione.b1
+                      ? <SlotGiocatore
+                          giocatore={formazione.b1} ranking={sportAttivo === 'Padel' ? ranking(formazione.b1) : undefined}
+                          quota={prezzoStimato / giocatoriScelti.length} onRemove={() => rimuoviSlot('b1')} colors={colors} s={s}
+                        />
+                      : <SlotVuoto attivo={slotAttivo === 'b1'} onPress={() => setSlotAttivo('b1')} colors={colors} s={s} />}
+                    {doppio && (formazione.b2
+                      ? <SlotGiocatore
+                          giocatore={formazione.b2} ranking={sportAttivo === 'Padel' ? ranking(formazione.b2) : undefined}
+                          quota={prezzoStimato / giocatoriScelti.length} onRemove={() => rimuoviSlot('b2')} colors={colors} s={s}
+                        />
+                      : <SlotVuoto attivo={slotAttivo === 'b2'} onPress={() => setSlotAttivo('b2')} colors={colors} s={s} />)}
+                  </SquadraCard>
+                </View>
+                <Muted style={{ marginTop: Spacing.sm, fontSize: Font.tiny }}>
+                  Quota stimata a testa — il prezzo si divide tra chi partecipa, si paga al centro o dai "miei impegni" a prenotazione fatta.
+                </Muted>
+              </View>
+            )}
+
+            {slotAttivo ? (
               <>
-                <Input icon="search" placeholder="Cerca giocatore per nome…" value={queryInvita} onChangeText={setQueryInvita} style={{ marginBottom: Spacing.md }} />
+                <Input icon="search" placeholder="Cerca giocatore per nome…" value={queryInvita} onChangeText={setQueryInvita} style={{ marginBottom: Spacing.md }} autoFocus />
 
                 {queryInvita.trim() ? (
                   risultatiCerca.length === 0 ? (
@@ -555,7 +639,7 @@ export default function Prenota() {
                 )}
               </>
             ) : (
-              <Muted style={{ textAlign: 'center' }}>Hai raggiunto il numero massimo di giocatori per questa partita.</Muted>
+              <Muted style={{ textAlign: 'center' }}>Tocca uno slot vuoto per aggiungere un giocatore.</Muted>
             )}
           </>
         )}
@@ -576,6 +660,67 @@ export default function Prenota() {
         </View>
       )}
     </SafeAreaView>
+  );
+}
+
+// ============================================================
+// Coppie A/B — stesso linguaggio visivo del gestionale (src/routes/
+// +page.svelte: card COPPIA A/COPPIA B, avatar squircle blu-notte, pallino
+// prezzo, badge DX/SX) — fix utente esplicito "vorrei fosse più simile al
+// gestionale".
+// ============================================================
+function SquadraCard({ titolo, media, evidenziata, children, colors, s }: {
+  titolo: string; media: number | null; evidenziata?: boolean; children: React.ReactNode;
+  colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <View style={[s.squadraCard, evidenziata && s.squadraCardEvidenziata]}>
+      <View style={s.squadraHead}>
+        <Text style={[s.squadraTitolo, evidenziata && { color: colors.gold }]}>{titolo}</Text>
+        {media != null && (
+          <Text style={s.squadraMedia}>Media: <Text style={s.squadraMediaValore}>{media.toFixed(2)}</Text></Text>
+        )}
+      </View>
+      <View style={{ gap: Spacing.sm }}>{children}</View>
+    </View>
+  );
+}
+
+function SlotGiocatore({ giocatore, fisso, ranking, quota, onRemove, colors, s }: {
+  giocatore: Giocatore; fisso?: boolean; ranking?: number; quota?: number | null;
+  onRemove?: () => void; colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  const posizione = giocatore.posizione;
+  return (
+    <View style={s.slotCard}>
+      {!fisso && onRemove && (
+        <Pressable onPress={onRemove} hitSlop={8} style={s.slotRimuovi}>
+          <Ionicons name="close" size={13} color={colors.slate} />
+        </Pressable>
+      )}
+      <Avatar name={`${giocatore.nome} ${giocatore.cognome}`} size={44} squircle />
+      <Text style={s.slotNome} numberOfLines={1}>{fisso ? 'Tu' : giocatore.nome}</Text>
+      {(ranking != null || (posizione && posizione !== 'entrambe')) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {ranking != null && <Text style={s.slotRanking}>{ranking.toFixed(2)}</Text>}
+          {posizione && posizione !== 'entrambe' && (
+            <Text style={s.slotPosizione}>{posizione === 'destra' ? 'DX' : 'SX'}</Text>
+          )}
+        </View>
+      )}
+      {quota != null && <Text style={s.slotQuota}>€{quota.toFixed(2)}</Text>}
+    </View>
+  );
+}
+
+function SlotVuoto({ attivo, onPress, colors, s }: {
+  attivo?: boolean; onPress: () => void; colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[s.slotCard, s.slotVuoto, attivo && s.slotVuotoAttivo]}>
+      <Ionicons name="add" size={20} color={attivo ? colors.gold : colors.slate} />
+      <Muted style={{ fontSize: Font.tiny }}>Aggiungi</Muted>
+    </Pressable>
   );
 }
 
@@ -600,9 +745,40 @@ function makeStyles(colors: AppColors) {
     campoIcon: { width: 40, height: 40, borderRadius: Radius.sm, backgroundColor: colors.gold + '22', alignItems: 'center', justifyContent: 'center' },
     campoNome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
     campoPrezzo: { color: colors.gold, fontWeight: '900', fontSize: Font.body },
-    invitatoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
-    invitatoNome: { flex: 1, color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
     invitoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    ottimizzaBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      paddingVertical: Spacing.sm, borderRadius: Radius.pill, backgroundColor: colors.navyCard,
+      borderWidth: 1, borderColor: colors.navyLine + '55', marginBottom: Spacing.md,
+    },
+    ottimizzaTesto: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small },
+    squadreRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start' },
+    squadraCard: {
+      flex: 1, backgroundColor: colors.navyCard, borderRadius: Radius.card, padding: Spacing.md,
+      borderWidth: 1, borderColor: colors.navyLine + '40',
+    },
+    squadraCardEvidenziata: { backgroundColor: colors.gold + '0F', borderColor: colors.gold + '55' },
+    squadraHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: Spacing.sm },
+    squadraTitolo: { color: colors.navyDeep, fontWeight: '900', fontSize: Font.tiny, letterSpacing: 0.5 },
+    squadraMedia: { color: colors.slate, fontSize: Font.tiny },
+    squadraMediaValore: { color: colors.navyDeep, fontWeight: '800' },
+    slotCard: {
+      backgroundColor: colors.bg, borderRadius: Radius.md, padding: Spacing.sm, alignItems: 'center',
+      gap: 3, borderWidth: 1, borderColor: colors.navyLine + '30',
+    },
+    slotRimuovi: { position: 'absolute', top: 4, right: 4, zIndex: 1 },
+    slotNome: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small, maxWidth: '100%' },
+    slotRanking: { color: colors.slate, fontSize: Font.tiny, fontWeight: '700' },
+    slotPosizione: {
+      color: colors.gold, fontSize: 9, fontWeight: '800', backgroundColor: colors.gold + '18',
+      paddingHorizontal: 5, paddingVertical: 1, borderRadius: Radius.pill, overflow: 'hidden',
+    },
+    slotQuota: {
+      color: colors.red, fontWeight: '800', fontSize: Font.tiny, backgroundColor: colors.red + '18',
+      paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.pill, marginTop: 2, overflow: 'hidden',
+    },
+    slotVuoto: { borderStyle: 'dashed', minHeight: 88, justifyContent: 'center' },
+    slotVuotoAttivo: { borderColor: colors.gold, borderStyle: 'solid', backgroundColor: colors.gold + '0F' },
     rankingBadge: { color: colors.gold, fontWeight: '800', fontSize: Font.small, backgroundColor: colors.gold + '18', paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.pill },
     slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
     slot: { width: '31%', paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: colors.navyCard, alignItems: 'center', borderWidth: 1, borderColor: colors.navyLine + '55' },

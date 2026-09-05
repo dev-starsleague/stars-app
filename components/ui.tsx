@@ -244,15 +244,28 @@ export function RankBadge({ value, size = 44 }: { value: number; size?: number }
 // alle iniziali colorate se assente/non ancora caricata — mai un placeholder
 // finto). `ringColor` disegna un anello colorato attorno al cerchio (fix
 // utente esplicito: avatar con bordo oro/rosso nella slide "avversari").
-export function Avatar({ name, size = 40, gold, uri, ringColor }: { name: string; size?: number; gold?: boolean; uri?: string | null; ringColor?: string }) {
+// `squircle` passa dal cerchio alla squircle blu-notte del gestionale
+// (.pl-av: sfondo scuro fisso in entrambi i temi, come le card
+// coppia A/B — fix utente esplicito "più simile al gestionale").
+export function Avatar({ name, size = 40, gold, uri, ringColor, squircle }: {
+  name: string; size?: number; gold?: boolean; uri?: string | null; ringColor?: string; squircle?: boolean;
+}) {
   const { colors } = useTheme();
   const initials = name.split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase();
   return (
     <View style={{
-      width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: gold ? colors.gold : colors.navyLine, overflow: 'hidden',
-      ...(ringColor ? { borderWidth: 2, borderColor: ringColor } : null),
+      width: size, height: size, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+      ...(squircle ? {} : {
+        borderRadius: size / 2, backgroundColor: gold ? colors.gold : colors.navyLine,
+        ...(ringColor ? { borderWidth: 2, borderColor: ringColor } : null),
+      }),
     }}>
+      {squircle && (
+        <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{
+          cornerRadius: size * 0.3, cornerSmoothing: CORNER_SMOOTHING, fillColor: gold ? colors.gold : colors.navy,
+          strokeColor: ringColor, strokeWidth: ringColor ? 2 : 0,
+        }} />
+      )}
       {uri
         ? <Image source={{ uri: uri.startsWith('http') ? uri : apiUrl(uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         : <Text style={{ fontWeight: '800', fontSize: size * 0.36, color: gold ? colors.navyDeep : colors.white }}>{initials}</Text>}
