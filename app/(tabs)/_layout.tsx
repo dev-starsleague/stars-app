@@ -8,6 +8,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Radius, Spacing } from '../../constants/theme';
 import { useTheme } from '../../lib/theme';
+import { MatchmakingPanel } from '../../components/MatchmakingPanel';
 
 // Pressable animabile (opacity/scale via Animated.Value) senza perdere
 // onPress/hitSlop — serve per il backdrop e il box del pop-up della
@@ -355,44 +356,61 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 tema-dipendente), SOLO il bordo è dorato, con un riflesso
                 caldo in alto per l'effetto vetro (stile Card in
                 components/ui.tsx, tinta oro invece che neutra) e un alone
-                dorato morbido intorno (shadow* nativi sul livello ESTERNO,
-                che non ha overflow:hidden — altrimenti verrebbe tagliato,
-                stesso accorgimento di Card). */}
-            <AnimatedPressable
-              style={[
-                styles.popupBoxOuter,
-                {
-                  left: targetX, top: targetY, width: targetW, height: targetH, opacity: contentAnim,
-                  shadowColor: '#FFAF00', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 18,
-                },
-              ]}
-              onPress={(e) => e.stopPropagation()}>
-              <View style={styles.popupBoxInner}>
-                {/* Più opaco e più sfocato del vetro "strong" normale
-                    dell'app (fix utente esplicito: "molta meno trasparenza
-                    ... più offuscamento, deve essere più blurrato") — solo
-                    per questo pop-up, non tocca glass.strongBg/blurStrong
-                    condivisi con gli altri modali. */}
-                <BlurView intensity={70} tint={scheme} style={StyleSheet.absoluteFillObject} />
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: scheme === 'dark' ? 'rgba(22,29,43,0.93)' : 'rgba(255,255,255,0.93)' }]} />
-                {/* Riflesso appena accennato (non un lavaggio caldo su
-                    tutta la card, fix: era troppo intenso/troppo esteso —
-                    "il resto deve essere in base al tema") — solo una
-                    striscia sottile in alto, stessa idea del riflesso di
-                    Card in ui.tsx ma con un pizzico di oro. */}
-                <LinearGradient
-                  colors={['rgba(255,196,92,0.16)', 'rgba(255,175,0,0)']}
-                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.22 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <Pressable style={styles.popupChiudi} onPress={chiudiPopupStella} hitSlop={10}>
-                  <Ionicons name="close" size={20} color={colors.labelSecondary} />
-                </Pressable>
-                <Text style={[styles.popupTitolo, { color: colors.labelPrimary }]}>Presto disponibile</Text>
-                <Text style={[styles.popupSottotitolo, { color: colors.labelSecondary }]}>Contenuto in arrivo</Text>
-              </View>
-            </AnimatedPressable>
+                dorato morbido intorno (shadow* nativi su un livello senza
+                overflow:hidden — altrimenti verrebbe tagliato, stesso
+                accorgimento di Card).
+                TRE livelli, non due — fix di un artefatto visivo reale
+                (angolo grigio scuro che spuntava fuori dal bordo
+                arrotondato, "angoli... guarda cagata"): animare l'opacità
+                (contentAnim) sulla STESSA vista che fa anche il ritaglio
+                arrotondato (overflow:hidden) creava un artefatto di
+                compositing del browser esattamente nell'angolo in alto a
+                sinistra (l'origine di default della trasformazione CSS che
+                React Native Web usa per animare l'opacity), visibile anche
+                a animazione conclusa, non solo durante. Ora l'opacità sta
+                su un involucro esterno che non ritaglia nulla di suo
+                (styles.popupBoxWrap, solo position/size/opacity), il
+                ritaglio arrotondato sta su un livello sempre statico più
+                interno (mai lui stesso animato) — stesso principio "chi
+                anima e chi ritaglia devono essere nodi diversi" già dietro
+                alla separazione ombra/ritaglio di Card. */}
+            <Animated.View
+              style={[styles.popupBoxWrap, { left: targetX, top: targetY, width: targetW, height: targetH, opacity: contentAnim }]}
+              pointerEvents="box-none">
+              <Pressable
+                style={[styles.popupBoxOuter, { shadowColor: '#FFAF00', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 18 }]}
+                onPress={(e) => e.stopPropagation()}>
+                <View style={styles.popupBoxInner}>
+                  {/* Più opaco e più sfocato del vetro "strong" normale
+                      dell'app (fix utente esplicito: "molta meno trasparenza
+                      ... più offuscamento, deve essere più blurrato") — solo
+                      per questo pop-up, non tocca glass.strongBg/blurStrong
+                      condivisi con gli altri modali. */}
+                  <BlurView intensity={70} tint={scheme} style={StyleSheet.absoluteFillObject} />
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: scheme === 'dark' ? 'rgba(22,29,43,0.93)' : 'rgba(255,255,255,0.93)' }]} />
+                  {/* Riflesso appena accennato (non un lavaggio caldo su
+                      tutta la card, fix: era troppo intenso/troppo esteso —
+                      "il resto deve essere in base al tema") — solo una
+                      striscia sottile in alto, stessa idea del riflesso di
+                      Card in ui.tsx ma con un pizzico di oro. */}
+                  <LinearGradient
+                    colors={['rgba(255,196,92,0.16)', 'rgba(255,175,0,0)']}
+                    start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.22 }}
+                    style={StyleSheet.absoluteFillObject}
+                    pointerEvents="none"
+                  />
+                  <Pressable style={styles.popupChiudi} onPress={chiudiPopupStella} hitSlop={10}>
+                    <Ionicons name="close" size={20} color={colors.labelSecondary} />
+                  </Pressable>
+                  {/* Matchmaking automatico reale (fix utente esplicito: 8
+                      fasi di analisi → lista partite in attesa/incomplete
+                      compatibili → partecipa o entra in lista d'attesa) —
+                      tutta la logica vive in MatchmakingPanel, questo file
+                      resta solo l'involucro animato. */}
+                  <MatchmakingPanel visibile={popupVisibile} onChiudi={chiudiPopupStella} />
+                </View>
+              </Pressable>
+            </Animated.View>
         </>
       )}
     </View>
@@ -492,7 +510,15 @@ const styles = StyleSheet.create({
   // liquido centrato" già usato altrove nell'app (es. modali di
   // impegni.tsx) — vedi i commenti nella return sopra sul perché non è un
   // <Modal>.
-  popupSfondo: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,38,0.45)' },
+  // Alpha alto (fix utente esplicito: "ci sono degli angoli... guarda
+  // cagata" — un elemento della Home, verosimilmente l'header, si
+  // intravedeva con un bordo netto proprio nell'angolo arrotondato del
+  // pop-up: a 0.45 lo sfondo attenuava ma non nascondeva abbastanza il
+  // contenuto sotto, che quindi restava visibile a sufficienza da creare
+  // un contrasto duro esattamente dove l'arco arrotondato lascia scoperto
+  // un piccolo triangolo di sfondo). Ora scurisce a sufficienza da rendere
+  // impercettibile qualunque cosa sotto, indipendentemente da cosa sia.
+  popupSfondo: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,15,26,0.86)' },
   // "Navicella": position:absolute con left/top/width/height impostati
   // inline (dipendono dalla misura della stella e da Dimensions, non sono
   // valori fissi di stile). overflow:hidden: lo sfondo dorato animato
@@ -505,12 +531,15 @@ const styles = StyleSheet.create({
   morphStar: { position: 'absolute', width: '45%', height: '45%' },
   // Vero box del pop-up: dimensione/posizione TARGET impostate inline
   // (left/top/width/height = 410×765 centrato fra header e navbar — fix
-  // utente esplicito). Due livelli come Card in components/ui.tsx: quello
-  // esterno porta l'ombra/alone dorato (shadow* nativi inline — non può
-  // convivere con overflow:hidden sullo stesso nodo, altrimenti verrebbe
-  // tagliato), quello interno ritaglia blur/bordo/riflesso agli angoli
-  // arrotondati.
-  popupBoxOuter: { position: 'absolute', borderRadius: Radius.modal },
+  // utente esplicito). TRE livelli (vedi il commento più esteso nella
+  // return sopra, sul fix dell'angolo grigio): questo esterno porta SOLO
+  // position/size/opacity animata (contentAnim), nessun ritaglio/ombra
+  // propri — sono sul livello statico più interno, mai lui stesso animato.
+  popupBoxWrap: { position: 'absolute' },
+  // Ombra/alone dorato (shadow* nativi inline — non può convivere con
+  // overflow:hidden sullo stesso nodo, altrimenti verrebbe tagliato,
+  // stesso accorgimento di Card in ui.tsx). Mai animato direttamente.
+  popupBoxOuter: { flex: 1, borderRadius: Radius.modal },
   // SOLO questo bordo è dorato (fix utente esplicito: "SOLO i bordi
   // rimanessero arancioni... il resto in base al tema") — l'interno
   // (BlurView + glass.strongBg) resta tema-dipendente come ogni altro
@@ -520,7 +549,5 @@ const styles = StyleSheet.create({
     overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(255,175,0,0.6)',
     alignItems: 'center', gap: Spacing.xs,
   },
-  popupChiudi: { position: 'absolute', top: Spacing.md, right: Spacing.md, padding: Spacing.xs },
-  popupTitolo: { fontSize: 17, fontWeight: '700', textAlign: 'center', marginTop: Spacing.sm },
-  popupSottotitolo: { fontSize: 13, textAlign: 'center' },
+  popupChiudi: { position: 'absolute', top: Spacing.md, right: Spacing.md, padding: Spacing.xs, zIndex: 1 },
 });

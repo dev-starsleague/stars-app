@@ -240,35 +240,84 @@ export function RankBadge({ value, size = 44 }: { value: number; size?: number }
   );
 }
 
-// `uri` mostra la foto reale del giocatore quando c'è (fallback automatico
-// alle iniziali colorate se assente/non ancora caricata — mai un placeholder
-// finto). `ringColor` disegna un anello colorato attorno al cerchio (fix
-// utente esplicito: avatar con bordo oro/rosso nella slide "avversari").
-// `squircle` passa dal cerchio alla squircle blu-notte del gestionale
-// (.pl-av: sfondo scuro fisso in entrambi i temi, come le card
-// coppia A/B — fix utente esplicito "più simile al gestionale").
-export function Avatar({ name, size = 40, gold, uri, ringColor, squircle }: {
-  name: string; size?: number; gold?: boolean; uri?: string | null; ringColor?: string; squircle?: boolean;
+// Immagine di profilo di default per genere (fix utente esplicito: prima
+// c'erano solo iniziali colorate) — silhouette "liquid glass", una per
+// uomo/donna. NIENTE sfondo colorato dietro l'immagine (fix utente
+// esplicito: "rimuovi lo sfondo. e lascialo trasparente") — il cerchio/
+// squircle resta trasparente e lascia vedere la superficie sotto.
+const IMMAGINE_PROFILO_M = require('../assets/profilo-liquidglass-m.png');
+const IMMAGINE_PROFILO_F = require('../assets/profilo-liquidglass-f.png');
+
+/** Immagine di profilo di default per un genere — null se il genere non è
+ *  noto (in quel caso chi chiama ricade sulle iniziali, come prima). */
+export function immagineProfiloDefault(genere?: string | null) {
+  if (genere === 'M') return IMMAGINE_PROFILO_M;
+  if (genere === 'F') return IMMAGINE_PROFILO_F;
+  return null;
+}
+
+// `uri` mostra la foto reale del giocatore quando c'è; altrimenti, se
+// `genere` è noto, l'immagine di profilo di default per quel genere (fix
+// utente esplicito, vedi sopra) su sfondo trasparente; solo se manca anche
+// il genere si ricade sulle iniziali colorate come prima. `ringColor`
+// disegna un anello colorato attorno al cerchio (fix utente esplicito:
+// avatar con bordo oro/rosso nella slide "avversari"). `squircle` passa
+// dal cerchio alla squircle blu-notte del gestionale (.pl-av: sfondo scuro
+// fisso in entrambi i temi, come le card coppia A/B — fix utente esplicito
+// "più simile al gestionale") — anche qui l'immagine di default resta
+// trasparente, non sul navy fisso di quella modalità.
+export function Avatar({ name, size = 40, gold, uri, ringColor, squircle, genere }: {
+  name: string; size?: number; gold?: boolean; uri?: string | null; ringColor?: string; squircle?: boolean; genere?: string | null;
 }) {
   const { colors } = useTheme();
   const initials = name.split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase();
+  // `gold` non nasconde più l'immagine di default (fix utente esplicito:
+  // "voglio vedere come si vede nei vari punti dove si deve vedere" — anche
+  // nei punti che usavano `gold` come semplice evidenziazione, es. l'header
+  // del profilo giocatore). Quando i due coesistono, `gold` diventa un
+  // anello dorato attorno all'immagine invece di riempire lo sfondo: solo
+  // quando il genere non è noto si ricade sul vecchio cerchio pieno oro +
+  // iniziali blu-notte, comportamento invariato.
+  const immagineDefault = !uri ? immagineProfiloDefault(genere) : null;
+  const anello = immagineDefault ? (gold ? colors.gold : ringColor) : ringColor;
   return (
     <View style={{
       width: size, height: size, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
       ...(squircle ? {} : {
-        borderRadius: size / 2, backgroundColor: gold ? colors.gold : colors.navyLine,
-        ...(ringColor ? { borderWidth: 2, borderColor: ringColor } : null),
+        borderRadius: size / 2, backgroundColor: immagineDefault ? 'transparent' : (gold ? colors.gold : colors.navyLine),
+        ...(anello ? { borderWidth: 2, borderColor: anello } : null),
       }),
     }}>
       {squircle && (
         <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{
-          cornerRadius: size * 0.3, cornerSmoothing: CORNER_SMOOTHING, fillColor: gold ? colors.gold : colors.navy,
-          strokeColor: ringColor, strokeWidth: ringColor ? 2 : 0,
+          cornerRadius: size * 0.3, cornerSmoothing: CORNER_SMOOTHING,
+          fillColor: immagineDefault ? 'transparent' : (gold ? colors.gold : colors.navy),
+          strokeColor: anello, strokeWidth: anello ? 2 : 0,
         }} />
       )}
       {uri
         ? <Image source={{ uri: uri.startsWith('http') ? uri : apiUrl(uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        : immagineDefault
+        ? <Image source={immagineDefault} style={{ width: '82%', height: '82%' }} resizeMode="contain" />
         : <Text style={{ fontWeight: '800', fontSize: size * 0.36, color: gold ? colors.navyDeep : colors.white }}>{initials}</Text>}
+    </View>
+  );
+}
+
+// Distintivo "partita in attesa di abbinamento" (fix utente esplicito:
+// "evidenziata con una stella nell'angolo alto dx") — da mettere come
+// sibling assoluto SOPRA una card, il cui genitore diretto deve avere
+// `position: 'relative'` (o essere già relative di default, come ogni View
+// non-absolute) perché questo badge si posizioni rispetto a lei.
+export function BadgeAttesa() {
+  const { colors } = useTheme();
+  return (
+    <View style={{
+      position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11, zIndex: 1,
+      backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
+    }}>
+      <Ionicons name="star" size={12} color="#fff" />
     </View>
   );
 }

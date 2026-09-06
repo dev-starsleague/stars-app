@@ -141,6 +141,14 @@ export interface Prenotazione {
   fine: string | null; // HH:MM
   tipo: TipoPrenotazione;
   stato: StatoPrenotazione;
+  // sport della prenotazione — normalmente derivato da campo.sport lato
+  // client, valorizzato qui solo per le prenotazioni "attesa" del
+  // matchmaking (che non hanno ancora un campo assegnato).
+  sport?: string | null;
+  // preferenza di giorno/ora indicata entrando in lista d'attesa dal
+  // matchmaking (fix utente esplicito: "devo poter decidere una preferenza
+  // di giorno ed ora") — puramente informativa per lo staff.
+  preferenza_attesa?: PreferenzaAttesa | null;
   stato_pagamento: StatoPagamento;
   prezzo: number;
   giocatori_extra: string[]; // id giocatori
@@ -163,6 +171,42 @@ export interface Prenotazione {
 // abbonamento|coin|misto|non_categorizzato...): qui limitato ai due che
 // l'app può effettivamente scrivere (vedi pagaQuotaPrenotazione).
 export interface PagamentoGiocatore { importo: number; pagato: boolean; metodo?: 'coin' | 'non_categorizzato' }
+
+/** Preferenza di giorno/ora scelta entrando in lista d'attesa (fix utente
+ *  esplicito) — tutti e tre i campi opzionali. */
+export interface PreferenzaAttesa {
+  giorno?: string | null; // "Lun"|"Mar"|"Mer"|"Gio"|"Ven"|"Sab"|"Dom" o null = qualsiasi
+  inizio?: string | null; // "HH:MM"
+  fine?: string | null; // "HH:MM"
+}
+
+// Matchmaking (tasto centrale stella) — vedi GET /matchmaking/cerca.
+export interface GiocatoreMinimo {
+  id: string; nome: string; cognome: string; avatar_url?: string | null;
+  genere?: Genere | null;
+  // stessi campi di Giocatore/RankingGiocatore, per mostrare i giocatori
+  // nelle card di matchmaking come nella schermata di prenotazione
+  // (avatar squircle + nome + ranking + badge DX/SX).
+  posizione?: 'destra' | 'sinistra' | 'entrambe' | null;
+  ranking?: number | null;
+}
+export interface OpportunitaMatchmaking {
+  tipo: 'attesa' | 'incompleta';
+  prenotazione_id: string;
+  centro_id: string;
+  centro_nome: string;
+  campo_id: string | null;
+  campo_nome: string | null;
+  data: string | null;
+  inizio: string | null;
+  fine: string | null;
+  formato: 'singolo' | 'doppio' | null;
+  posti_totali: number;
+  posti_occupati: number;
+  giocatori_presenti: GiocatoreMinimo[];
+  e_centro_preferito: boolean;
+  punteggio_compatibilita: number;
+}
 
 /** Prodotto noleggiabile del centro (racchette, palline...) — catalogo
  *  scoped per centro, stesso modello del gestionale
@@ -333,6 +377,7 @@ export interface InsightAvversario {
   giocatoreId: string;
   nome: string;
   avatarUrl: string | null;
+  genere: Genere | null;
   partiteInsieme: number; // partite in comune (come compagni o avversari, a seconda del blocco)
   vittorie: number; // vittorie MIE in quelle partite
   sconfitte: number; // sconfitte MIE in quelle partite

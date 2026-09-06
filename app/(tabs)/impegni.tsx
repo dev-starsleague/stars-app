@@ -11,14 +11,14 @@ import { useAuth } from '../../lib/auth';
 import {
   getPartiteGiocatore, getEventiIscritti, getGiocatori, getCentri, salvaRisultatoPartita, haVinto,
   getProdottiNoleggio, getPrestitiNoleggio, assegnaNoleggio, pagaQuotaPrenotazione, pagaInteroCampo,
-  quotaGiocatore, getStarsCoinPerCentro, updatePrenotazione,
+  quotaGiocatore, getStarsCoinPerCentro, updatePrenotazione, annullaPrenotazione,
   getRounds, creaRound, updateRound, eliminaRound, salvaRisultatoRound,
 } from '../../lib/api';
 import { erroreSet, vincitoreDaSets, type SetInput } from '../../lib/risultato';
 import { avvisa } from '../../lib/avviso';
 import { serveRisultato, servePagamento } from '../../lib/impegni';
 import { AppHeader } from '../../components/AppHeader';
-import { Card, IconBadge, IconButton, Muted, Button, Chip, Avatar } from '../../components/ui';
+import { Card, IconBadge, IconButton, Muted, Button, Chip, Avatar, BadgeAttesa } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
 import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
 import type { Prenotazione, EventoCustom, Giocatore, Centro, NoleggioProdotto, NoleggioPrestito, RoundPartita } from '../../types/models';
@@ -78,6 +78,8 @@ export default function Impegni() {
   // Sezioni collassabili (fix utente esplicito) — aperte di default.
   const [sospesoAperto, setSospesoAperto] = useState(true);
   const [prossimiAperto, setProssimiAperto] = useState(true);
+  const [attesaAperto, setAttesaAperto] = useState(true);
+  const [annullandoAttesa, setAnnullandoAttesa] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!me) return;
@@ -92,12 +94,25 @@ export default function Impegni() {
   const giocatoriMap = useMemo(() => new Map(giocatori.map((g) => [g.id, g])), [giocatori]);
   const centriMap = useMemo(() => new Map(centri.map((c) => [c.id, c])), [centri]);
 
+  const annullaAttesa = async (p: Prenotazione) => {
+    setAnnullandoAttesa(p.id);
+    await annullaPrenotazione(p.id);
+    setAnnullandoAttesa(null);
+    load();
+  };
+
   const daFare = useMemo(() => {
     const oggi = oggiISO();
     return partite
       .filter((p) => p.data && p.data < oggi && (servePagamento(p) || serveRisultato(p)))
       .sort((a, b) => (b.data ?? '').localeCompare(a.data ?? ''));
   }, [partite]);
+
+  // Partite "in attesa" create dal matchmaking (tasto centrale stella,
+  // fix utente esplicito) — nessun campo/data/orario, quindi non entrano né
+  // in daFare né in inArrivo (entrambe richiedono p.data): sono perpetue
+  // nei giorni finché non vengono abbinate o annullate dal giocatore.
+  const inAttesaAbbinamento = useMemo(() => partite.filter((p) => p.stato === 'attesa'), [partite]);
 
   const inArrivo = useMemo(() => {
     const oggi = oggiISO();
@@ -409,7 +424,7 @@ export default function Impegni() {
                 <View style={s.squadraMiniAvatars}>
                   {mia.map((g) => (
                     <View key={g.id} style={s.miniGiocatore}>
-                      <Avatar name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} />
+                      <Avatar name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} genere={g.genere} />
                       <Text style={s.miniNome} numberOfLines={1}>{g.id === me?.id ? 'Tu' : g.nome}</Text>
                     </View>
                   ))}
@@ -422,7 +437,7 @@ export default function Impegni() {
                 <View style={s.squadraMiniAvatars}>
                   {avv.map((g) => (
                     <View key={g.id} style={s.miniGiocatore}>
-                      <Avatar name={`${g.nome} ${g.cognome}`} size={30} squircle />
+                      <Avatar name={`${g.nome} ${g.cognome}`} size={30} squircle genere={g.genere} />
                       <Text style={s.miniNome} numberOfLines={1}>{g.nome}</Text>
                     </View>
                   ))}
@@ -515,6 +530,38 @@ export default function Impegni() {
               </>
             )}
 
+            {inAttesaAbbinamento.length > 0 && (
+              <>
+                <Pressable onPress={() => setAttesaAperto((v) => !v)} style={s.sectionHead}>
+                  <Text style={s.sectionTitle}>In attesa di abbinamento</Text>
+                  <Ionicons name={attesaAperto ? 'chevron-up' : 'chevron-down'} size={18} color={colors.slate} />
+                </Pressable>
+                {attesaAperto && (
+                  <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
+                    {inAttesaAbbinamento.map((p) => (
+                      <View key={p.id} style={{ position: 'relative' }}>
+                        <BadgeAttesa />
+                        <Card>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                            <IconBadge icon="hourglass-outline" />
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.rigaTitolo}>{centriMap.get(p.centro_id)?.nome ?? 'Centro'}</Text>
+                              <Muted>{p.sport ?? 'Sport'} · in attesa di un abbinamento</Muted>
+                            </View>
+                            <IconButton
+                              icon="close"
+                              onPress={() => annullaAttesa(p)}
+                              disabled={annullandoAttesa === p.id}
+                            />
+                          </View>
+                        </Card>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
             <Pressable onPress={() => setProssimiAperto((v) => !v)} style={s.sectionHead}>
               <Text style={s.sectionTitle}>Prossimi</Text>
               <Ionicons name={prossimiAperto ? 'chevron-up' : 'chevron-down'} size={18} color={colors.slate} />
@@ -546,13 +593,13 @@ export default function Impegni() {
                 <View style={s.coppiaHeadCol}>
                   <Text style={s.coppiaHeadLabel}>COPPIA A</Text>
                   <View style={s.squadraMiniAvatars}>
-                    {giocatoriSquadraA.map((g) => <Avatar key={g.id} name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} />)}
+                    {giocatoriSquadraA.map((g) => <Avatar key={g.id} name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} genere={g.genere} />)}
                   </View>
                 </View>
                 <View style={s.coppiaHeadCol}>
                   <Text style={[s.coppiaHeadLabel, { color: colors.gold }]}>COPPIA B</Text>
                   <View style={s.squadraMiniAvatars}>
-                    {giocatoriSquadraB.map((g) => <Avatar key={g.id} name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} />)}
+                    {giocatoriSquadraB.map((g) => <Avatar key={g.id} name={`${g.nome} ${g.cognome}`} size={30} squircle gold={g.id === me?.id} genere={g.genere} />)}
                   </View>
                 </View>
               </View>
@@ -940,7 +987,7 @@ function DraggableGiocatoreRound({
           invece che neutra. */}
       <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colore + '26' }]} />
-      <Avatar name={`${giocatore.nome} ${giocatore.cognome}`} size={32} squircle />
+      <Avatar name={`${giocatore.nome} ${giocatore.cognome}`} size={32} squircle genere={giocatore.genere} />
       <Text style={s.roundSlotNome} numberOfLines={1}>{giocatore.nome}</Text>
     </Animated.View>
   );
@@ -954,6 +1001,7 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     scroll: { padding: Spacing.lg, paddingTop: 0 },
     sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.sm, marginTop: Spacing.sm },
     sectionTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
+    rigaTitolo: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
     scheda: {},
     schedaHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
     schedaTitolo: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '800' },

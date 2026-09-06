@@ -15,7 +15,7 @@ import type {
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
-  NoleggioProdotto, NoleggioPrestito, RoundPartita,
+  NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -208,15 +208,74 @@ export async function annullaPrenotazione(id: string): Promise<void> {
   await apiDelete(`/prenotazioni/${id}`);
 }
 
-/** Aggiorna una prenotazione già esistente — qui usato solo per
- *  `pagamenti`/`stato_pagamento` (pagaQuotaPrenotazione/pagaInteroCampo
- *  sotto). Il PATCH del backend sostituisce interi campi JSON, non fa
- *  merge (stesso comportamento di updateProfilo per `profilo`): chi
- *  chiama deve passare la mappa `pagamenti` già unita con quella attuale. */
-export async function updatePrenotazione(id: string, patch: Partial<Pick<Prenotazione, 'pagamenti' | 'stato_pagamento' | 'risultato'>>): Promise<{ ok: boolean; error?: string }> {
+/** Aggiorna una prenotazione già esistente — usato per `pagamenti`/
+ *  `stato_pagamento` (pagaQuotaPrenotazione/pagaInteroCampo sotto) e per
+ *  `giocatori_extra`/`squadre`/`stato` (entraInMatch sotto, matchmaking: si
+ *  unisce a una partita già esistente con lo stesso PATCH generico che usa
+ *  già lo staff dal Planner — stessi controlli reali di conflitto lato
+ *  backend, _valida_conflitto_giocatori compreso). Il PATCH del backend
+ *  sostituisce interi campi JSON, non fa merge (stesso comportamento di
+ *  updateProfilo per `profilo`): chi chiama deve passare il valore già
+ *  unito con quello attuale. */
+export async function updatePrenotazione(
+  id: string,
+  patch: Partial<Pick<Prenotazione, 'pagamenti' | 'stato_pagamento' | 'risultato' | 'giocatori_extra' | 'squadre' | 'stato'>>
+): Promise<{ ok: boolean; error?: string }> {
   if (isMock()) return { ok: true };
   const { error } = await apiPatch(`/prenotazioni/${id}`, patch);
   return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Matchmaking (tasto centrale stella) ----------
+
+/** Analizza ranking/preferenze/orari del giocatore e restituisce le
+ *  opportunità di gioco già reali nel sistema (partite in attesa o
+ *  confermate ma incomplete) ordinate per compatibilità — vedi
+ *  GET /matchmaking/cerca sul backend, che fa tutto il lavoro (ricerca +
+ *  punteggio): qui solo la chiamata. */
+export async function cercaMatchmaking(giocatoreId: string, sport: string): Promise<OpportunitaMatchmaking[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<OpportunitaMatchmaking[]>('/matchmaking/cerca', { giocatore_id: giocatoreId, sport });
+  return data ?? [];
+}
+
+/** Il giocatore entra in lista d'attesa presso un centro invece di unirsi a
+ *  un'opportunità trovata — crea una prenotazione "attesa" senza campo/data/
+ *  orario (stesso segnaposto che lo staff crea a mano nel pannello laterale
+ *  del Planner), visibile da lì e da future ricerche di altri giocatori.
+ *  `preferenza` (fix utente esplicito: "devo poter decidere una preferenza
+ *  di giorno ed ora") è puramente informativa per lo staff — non incide sul
+ *  matchmaking automatico. */
+export async function entraInAttesa(input: {
+  giocatoreId: string; centroId: string; sport: string; formato?: 'singolo' | 'doppio';
+  preferenza?: PreferenzaAttesa | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.giocatoreId)) return { ok: true };
+  const { error } = await apiPost('/prenotazioni/attesa', {
+    giocatore_id: input.giocatoreId, centro_id: input.centroId, sport: input.sport, formato: input.formato ?? 'doppio',
+    preferenza: input.preferenza ?? null,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Il giocatore si unisce a un'opportunità trovata dal matchmaking —
+ *  aggiunge semplicemente il proprio id a giocatori_extra della
+ *  prenotazione esistente (updatePrenotazione sopra fa passare l'update
+ *  dagli stessi controlli di conflitto reali del backend). */
+export async function entraInMatch(opportunita: OpportunitaMatchmaking, giocatoreId: string): Promise<{ ok: boolean; error?: string }> {
+  if (eIlGiocatoreDemo(giocatoreId)) return { ok: true };
+  const giocatoriExtra = [...opportunita.giocatori_presenti.map((g) => g.id), giocatoreId];
+  return updatePrenotazione(opportunita.prenotazione_id, { giocatori_extra: giocatoriExtra });
+}
+
+/** Prenotazioni "attesa" (in lista d'attesa di abbinamento) del giocatore —
+ *  stesso idioma di getPrenotazioniGiornoGiocatore: il generico filtra solo
+ *  per uguaglianza su una colonna, l'appartenenza a giocatori_extra si
+ *  controlla lato client. */
+export async function getMiePrenotazioniInAttesa(giocatoreId: string): Promise<Prenotazione[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<Prenotazione[]>('/prenotazioni', { stato: 'attesa' });
+  return (data ?? []).filter((p) => p.giocatori_extra?.includes(giocatoreId));
 }
 
 // ---------- Noleggio (attrezzatura) ----------
@@ -568,6 +627,7 @@ export async function getInsightsSociali(giocatoreId: string, sport: string): Pr
   const [partite, giocatori] = await Promise.all([getPartiteGiocatore(giocatoreId), getGiocatori()]);
   const nomeById = new Map(giocatori.map((g) => [g.id, `${g.nome} ${g.cognome}`]));
   const avatarById = new Map(giocatori.map((g) => [g.id, g.avatar_url ?? null]));
+  const genereById = new Map(giocatori.map((g) => [g.id, g.genere ?? null]));
   const rilevanti = partite.filter((p) => p.tipo !== 'lezione' && p.campo?.sport === sport && p.risultato?.vincitore);
 
   type Aggregato = { partite: number; vittorie: number; sconfitte: number };
@@ -605,6 +665,7 @@ export async function getInsightsSociali(giocatoreId: string, sport: string): Pr
     if (!bestId || !bestRiga) return null;
     return {
       giocatoreId: bestId, nome: nomeById.get(bestId) ?? 'Giocatore', avatarUrl: avatarById.get(bestId) ?? null,
+      genere: genereById.get(bestId) ?? null,
       partiteInsieme: bestRiga.partite, vittorie: bestRiga.vittorie, sconfitte: bestRiga.sconfitte,
     };
   };

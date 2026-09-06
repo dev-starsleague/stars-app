@@ -582,7 +582,7 @@ export default function Prenota() {
                       {risultatiCerca.map((g) => (
                         <Pressable key={g.id} onPress={() => invita(g)}>
                           <Card style={s.invitoCard}>
-                            <Avatar name={`${g.nome} ${g.cognome}`} size={40} />
+                            <Avatar name={`${g.nome} ${g.cognome}`} size={40} genere={g.genere} />
                             <View style={{ flex: 1 }}>
                               <Text style={s.campoNome}>{g.nome} {g.cognome}</Text>
                               {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
@@ -601,7 +601,7 @@ export default function Prenota() {
                       {suggeritiEquilibrio.map((g) => (
                         <Pressable key={g.id} onPress={() => invita(g)}>
                           <Card style={s.invitoCard}>
-                            <Avatar name={`${g.nome} ${g.cognome}`} size={40} />
+                            <Avatar name={`${g.nome} ${g.cognome}`} size={40} genere={g.genere} />
                             <View style={{ flex: 1 }}>
                               <Text style={s.campoNome}>{g.nome} {g.cognome}</Text>
                               {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
@@ -623,7 +623,7 @@ export default function Prenota() {
                         {amiciDisponibili.map((g) => (
                           <Pressable key={g.id} onPress={() => invita(g)}>
                             <Card style={s.invitoCard}>
-                              <Avatar name={`${g.nome} ${g.cognome}`} size={40} />
+                              <Avatar name={`${g.nome} ${g.cognome}`} size={40} genere={g.genere} />
                               <View style={{ flex: 1 }}>
                                 <Text style={s.campoNome}>{g.nome} {g.cognome}</Text>
                                 {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
@@ -698,7 +698,7 @@ function SlotGiocatore({ giocatore, fisso, ranking, quota, onRemove, colors, s }
           <Ionicons name="close" size={13} color={colors.slate} />
         </Pressable>
       )}
-      <Avatar name={`${giocatore.nome} ${giocatore.cognome}`} size={44} squircle />
+      <Avatar name={`${giocatore.nome} ${giocatore.cognome}`} size={44} squircle genere={giocatore.genere} />
       <Text style={s.slotNome} numberOfLines={1}>{fisso ? 'Tu' : giocatore.nome}</Text>
       {(ranking != null || (posizione && posizione !== 'entrambe')) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

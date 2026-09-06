@@ -65,7 +65,7 @@ export default function Amici() {
                 <H2 style={{ marginBottom: Spacing.md }}>Richieste ricevute</H2>
                 {inArrivo.map((a) => (
                   <Card key={a.id} style={s.row}>
-                    <Avatar name={`${a.amico?.nome} ${a.amico?.cognome}`} size={44} />
+                    <Avatar name={`${a.amico?.nome} ${a.amico?.cognome}`} size={44} genere={a.amico?.genere} />
                     <View style={{ flex: 1 }}>
                       <Text style={s.nome}>{a.amico?.nome} {a.amico?.cognome}</Text>
                       <Muted>Vuole essere tuo amico</Muted>
@@ -84,7 +84,7 @@ export default function Amici() {
               accettati.map((a) => (
                 <Pressable key={a.id} onPress={() => router.push(`/giocatore/${a.amico?.id}`)}>
                   <Card style={s.row}>
-                    <Avatar name={`${a.amico?.nome} ${a.amico?.cognome}`} size={44} />
+                    <Avatar name={`${a.amico?.nome} ${a.amico?.cognome}`} size={44} genere={a.amico?.genere} />
                     <View style={{ flex: 1 }}>
                       <Text style={s.nome}>{a.amico?.nome} {a.amico?.cognome}</Text>
                       <Muted>{a.amico?.profilo?.nickname ?? 'Padel'}</Muted>
@@ -101,7 +101,7 @@ export default function Amici() {
             {risultati.map((g) => (
               <Card key={g.id} style={s.row}>
                 <Pressable onPress={() => router.push(`/giocatore/${g.id}`)} style={s.rowInner}>
-                  <Avatar name={`${g.nome} ${g.cognome}`} size={44} />
+                  <Avatar name={`${g.nome} ${g.cognome}`} size={44} genere={g.genere} />
                   <View style={{ flex: 1 }}>
                     <Text style={s.nome}>{g.nome} {g.cognome}</Text>
                     <Muted>{g.profilo?.nickname ?? 'Padel'}</Muted>

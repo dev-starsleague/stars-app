@@ -9,7 +9,7 @@
 // Tutte e 3 seguono lo sport globale scelto nell'header (fix utente
 // esplicito, "deve essere fatto per ogni sport").
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, RefreshControl, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,7 +25,7 @@ import {
 } from '../../lib/api';
 import type { FiltroClassificaRanking } from '../../lib/api';
 import { AppHeader } from '../../components/AppHeader';
-import { Card, IconButton, Input, Muted, Segmented } from '../../components/ui';
+import { Card, IconButton, Input, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../../constants/theme';
 import type { Centro, Genere, RankingGiocatore, Giocatore, ClassificaMensile, RigaClassificaCoppia } from '../../types/models';
 
@@ -97,6 +97,7 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
   const righeGeneriche: RigaGenerica[] = righeFiltrate.map((r) => ({
     key: r.giocatore_id,
     iniziali: iniziali(r.giocatore?.nome),
+    genere: r.giocatore?.genere,
     titolo: nomeCompleto(r.giocatore),
     sottotitolo: categoriaRanking(r.ranking),
     valore: r.ranking.toFixed(2),
@@ -315,6 +316,7 @@ function SezioneStelle({ sportAttivo, centri, colors, s }: {
   const righeGeneriche: RigaGenerica[] = lista.map((r) => ({
     key: r.id,
     iniziali: iniziali(r.giocatore?.nome),
+    genere: r.giocatore?.genere,
     titolo: nomeCompleto(r.giocatore),
     sottotitolo: `${categoriaRanking(rankingMap.get(r.giocatore_id) ?? null)} · ${r.partite} partit${r.partite === 1 ? 'a' : 'e'}`,
     valore: `${r.punti}`,
@@ -476,7 +478,7 @@ function SezioneCoppie({ sportAttivo, centri, colors, s }: {
 // Componenti condivisi: podio (1°/2°/3°) + lista, usati da tutte e 3 le
 // sezioni con dati diversi ma stesso linguaggio grafico.
 // ============================================================
-interface RigaGenerica { key: string; iniziali: string; titolo: string; sottotitolo: string; valore: string; onPress?: () => void }
+interface RigaGenerica { key: string; iniziali: string; genere?: Genere | null; titolo: string; sottotitolo: string; valore: string; onPress?: () => void }
 
 function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
   righe: RigaGenerica[]; coloreValore: string; unitaValore: string; vuoto: string;
@@ -499,7 +501,7 @@ function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
         {resto.map((r, i) => (
           <Pressable key={r.key} onPress={r.onPress} disabled={!r.onPress} style={s.listaRiga}>
             <Text style={s.listaPos}>{i + 4}</Text>
-            <SquircleAvatar testo={r.iniziali} size={40} bg={colors.navyCard} colore={colors.navyDeep} />
+            <SquircleAvatar testo={r.iniziali} genere={r.genere} size={40} bg={colors.navyCard} colore={colors.navyDeep} mostraSfondo={false} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={s.listaNome} numberOfLines={1}>{r.titolo}</Text>
               <Text style={s.listaSottotitolo} numberOfLines={1}>{r.sottotitolo}</Text>
@@ -526,7 +528,7 @@ function PodioCol({ riga, posizione, colore, coloreValore, unitaValore, colors, 
   return (
     <Pressable onPress={riga.onPress} disabled={!riga.onPress} style={s.podioCol}>
       <Text style={s.podioMedaglia}>{MEDAGLIE[posizione]}</Text>
-      <SquircleAvatar testo={riga.iniziali} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />
+      <SquircleAvatar testo={riga.iniziali} genere={riga.genere} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />
       <Text style={s.podioNome} numberOfLines={1}>{riga.titolo}</Text>
       <Text style={[s.podioValore, { color: coloreValore }]} numberOfLines={1}>{riga.valore}{unitaValore}</Text>
       <Text style={s.podioSub} numberOfLines={1}>{riga.sottotitolo}</Text>
@@ -537,14 +539,25 @@ function PodioCol({ riga, posizione, colore, coloreValore, unitaValore, colors, 
   );
 }
 
-function SquircleAvatar({ testo, size, bg, colore }: { testo: string; size: number; bg: string; colore: string }) {
+// `mostraSfondo=false` (righe della lista, sotto il podio) lascia lo
+// squircle trasparente quando c'è un'immagine di default per genere (fix
+// utente esplicito: "rimuovi lo sfondo. e lascialo trasparente") — il
+// podio invece mantiene il colore oro/argento/bronzo (indica la
+// posizione, non è "lo sfondo dell'avatar": stessa scelta già fatta per
+// il podio equivalente nel gestionale).
+function SquircleAvatar({ testo, genere, size, bg, colore, mostraSfondo = true }: {
+  testo: string; genere?: string | null; size: number; bg: string; colore: string; mostraSfondo?: boolean;
+}) {
+  const immagine = immagineProfiloDefault(genere);
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <SquircleView
         style={StyleSheet.absoluteFillObject}
-        squircleParams={{ cornerRadius: size * 0.32, cornerSmoothing: CORNER_SMOOTHING, fillColor: bg }}
+        squircleParams={{ cornerRadius: size * 0.32, cornerSmoothing: CORNER_SMOOTHING, fillColor: immagine && !mostraSfondo ? 'transparent' : bg }}
       />
-      <Text style={{ color: colore, fontWeight: '900', fontSize: size * 0.36 }}>{testo}</Text>
+      {immagine
+        ? <Image source={immagine} style={{ width: '82%', height: '82%' }} resizeMode="contain" />
+        : <Text style={{ color: colore, fontWeight: '900', fontSize: size * 0.36 }}>{testo}</Text>}
     </View>
   );
 }

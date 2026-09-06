@@ -51,7 +51,7 @@ export default function GiocatoreProfilo() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <View style={s.header}>
-          <Avatar name={nome} size={90} gold />
+          <Avatar name={nome} size={90} gold genere={g?.genere} />
           <Text style={s.nome}>{nome}</Text>
           {g?.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
         </View>

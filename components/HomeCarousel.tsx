@@ -696,7 +696,7 @@ function SocialColonna({ titolo, icona, ringColor, dato, riga1, riga2, insight, 
         <Ionicons name={icona} size={13} color={ringColor} />
         <Text style={s.socialColonnaLabel} numberOfLines={1}>{titolo}</Text>
       </View>
-      <Avatar name={dato.nome} uri={dato.avatarUrl} size={42} gold ringColor={ringColor} />
+      <Avatar name={dato.nome} uri={dato.avatarUrl} size={42} gold ringColor={ringColor} genere={dato.genere} />
       <Text style={s.socialColonnaNome} numberOfLines={1}>{dato.nome}</Text>
       <Text style={s.socialColonnaStat} numberOfLines={1}>{riga1(dato)}</Text>
       <Text style={[s.socialColonnaStat, { color: colors.gold, fontWeight: '800' }]} numberOfLines={1}>{riga2(dato)}</Text>

@@ -16,7 +16,7 @@ import {
 import { avvisa } from '../../lib/avviso';
 import { apiUrl } from '../../lib/apiClient';
 import { AppHeader } from '../../components/AppHeader';
-import { Card, Chip, IconBadge, IconButton, Muted, Segmented } from '../../components/ui';
+import { Card, Chip, IconBadge, IconButton, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
 import { RankingChart } from '../../components/RankingChart';
 import { BADGE_CATALOGO } from '../../lib/stars';
 import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
@@ -89,6 +89,12 @@ export default function Profilo() {
 
   const nome = `${me?.nome ?? ''} ${me?.cognome ?? ''}`.trim() || 'Giocatore';
   const avatarUri = fotoLocale ?? (me?.avatar_url ? (me.avatar_url.startsWith('http') ? me.avatar_url : apiUrl(me.avatar_url)) : null);
+  // Foto di profilo di default per genere quando non c'è ancora una foto
+  // reale (fix utente esplicito) — stessa immagine del componente Avatar
+  // condiviso, qui reimplementata perché questo blocco non passa da
+  // <Avatar>. Sfondo trasparente (fix utente esplicito: "rimuovi lo
+  // sfondo. e lascialo trasparente").
+  const immagineDefault = !avatarUri ? immagineProfiloDefault(me?.genere) : null;
 
   const scegliFoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -136,9 +142,11 @@ export default function Profilo() {
         <Card style={s.headCard}>
           <View style={s.headTop}>
             <View style={s.avatarWrap}>
-              <View style={s.avatarBig}>
+              <View style={[s.avatarBig, immagineDefault ? { backgroundColor: 'transparent' } : null]}>
                 {avatarUri
                   ? <Image source={{ uri: avatarUri }} style={s.avatarImg} />
+                  : immagineDefault
+                  ? <Image source={immagineDefault} style={{ width: '82%', height: '82%' }} resizeMode="contain" />
                   : <Text style={s.avatarBigText}>{(me?.nome?.[0] ?? 'P').toUpperCase()}</Text>}
               </View>
               <Pressable style={s.camBtn} onPress={scegliFoto} disabled={caricandoFoto}>
