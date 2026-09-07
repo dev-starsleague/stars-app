@@ -1,22 +1,161 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { useAuth } from '../../lib/auth';
 import { updateProfilo } from '../../lib/api';
 import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
 import { Button, Card, Chip, IconButton, Input, Muted } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
-import { Spacing, Font, AppColors } from '../../constants/theme';
-import { SPORT_DISPONIBILI } from '../../lib/stars';
+import { Spacing, Font, Radius, AppColors } from '../../constants/theme';
 import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../../types/models';
 
 // Stessi campi del form "Modifica giocatore" del gestionale
 // (src/routes/giocatori/+page.svelte), riorganizzati nelle 4 sezioni chieste:
 // Anagrafica, Contatti, Preferenze di gioco, Disponibilità oraria.
 const GIORNI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+
+/** ISO ("AAAA-MM-GG", quello che salva il backend) → italiano
+ *  ("GG-MM-AAAA", quello che il giocatore vuole scrivere/leggere — fix
+ *  utente esplicito). '' se non ancora impostata. */
+function isoAItaliano(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+/** Italiano → ISO, solo quando la stringa è una data completa e valida
+ *  (mentre si digita è quasi sempre incompleta: null in quel caso, non un
+ *  errore — il chiamante deve limitarsi a non salvare finché non lo è). */
+function italianoAIso(it: string): string | null {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(it.trim());
+  if (!m) return null;
+  const [, gg, mm, aaaa] = m;
+  const d = new Date(Number(aaaa), Number(mm) - 1, Number(gg));
+  if (d.getFullYear() !== Number(aaaa) || d.getMonth() !== Number(mm) - 1 || d.getDate() !== Number(gg)) return null;
+  return `${aaaa}-${mm}-${gg}`;
+}
+
+const MESI_LUNGHI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+const GIORNI_SETT_CORTI = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+
+/** Calendario a scelta giorno per la data di nascita (fix utente esplicito:
+ *  "deve essere sia scrivibile che selezionabile a calendario") — frecce
+ *  di mese E di anno (una data di nascita è spesso decenni fa: solo mese
+ *  per mese sarebbe troppo lento) più un tap diretto sull'anno per
+ *  aprire l'elenco, così si arriva in due tocchi a qualunque anno. */
+function CalendarioDataNascita({ visibile, valoreIso, onChiudi, onScegli }: {
+  visibile: boolean; valoreIso: string; onChiudi: () => void; onScegli: (iso: string) => void;
+}) {
+  const { colors, glass, scheme } = useTheme();
+  const s = useMemo(() => makeStylesCalendario(colors), [colors]);
+  const partenza = valoreIso ? new Date(`${valoreIso}T12:00:00`) : new Date();
+  const [mese, setMese] = useState(() => new Date(partenza.getFullYear(), partenza.getMonth(), 1));
+  const [elencoAnniAperto, setElencoAnniAperto] = useState(false);
+
+  const anno = mese.getFullYear(); const meseIdx = mese.getMonth();
+  const primo = new Date(anno, meseIdx, 1);
+  const giorniMese = new Date(anno, meseIdx + 1, 0).getDate();
+  const offset = (primo.getDay() + 6) % 7; // lun=0
+  const celle: (number | null)[] = [];
+  for (let i = 0; i < offset; i++) celle.push(null);
+  for (let d = 1; d <= giorniMese; d++) celle.push(d);
+  const oggi = new Date();
+  const selezionatoGiorno = valoreIso && valoreIso.startsWith(`${anno}-${pad2(meseIdx + 1)}`) ? Number(valoreIso.slice(8, 10)) : -1;
+
+  // Elenco anni per lo scroll rapido: da 100 anni fa (nessun giocatore
+  // realisticamente più vecchio) a oggi.
+  const anniScelta = useMemo(() => {
+    const fine = oggi.getFullYear();
+    const inizio = fine - 100;
+    const arr: number[] = [];
+    for (let a = fine; a >= inizio; a--) arr.push(a);
+    return arr;
+  }, []);
+
+  return (
+    <Modal visible={visibile} transparent animationType="fade" onRequestClose={onChiudi}>
+      <Pressable style={s.sfondo} onPress={onChiudi}>
+        <Pressable style={s.box} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
+          {elencoAnniAperto ? (
+            <>
+              <Text style={s.titolo}>Scegli l'anno</Text>
+              <ScrollView style={{ maxHeight: 320 }}>
+                {anniScelta.map((a) => (
+                  <Pressable key={a} style={s.annoRiga} onPress={() => { setMese(new Date(a, meseIdx, 1)); setElencoAnniAperto(false); }}>
+                    <Text style={[s.annoRigaText, a === anno && { color: colors.gold }]}>{a}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          ) : (
+            <>
+              <View style={s.head}>
+                <Pressable onPress={() => setMese(new Date(anno - 1, meseIdx, 1))} hitSlop={8}>
+                  <Ionicons name="play-back" size={16} color={colors.slate} />
+                </Pressable>
+                <Pressable onPress={() => setMese(new Date(anno, meseIdx - 1, 1))} hitSlop={8}>
+                  <Ionicons name="chevron-back" size={20} color={colors.slate} />
+                </Pressable>
+                <Pressable onPress={() => setElencoAnniAperto(true)} style={s.headTitoloBtn}>
+                  <Text style={s.headTitolo}>{MESI_LUNGHI[meseIdx]} {anno}</Text>
+                </Pressable>
+                <Pressable onPress={() => setMese(new Date(anno, meseIdx + 1, 1))} hitSlop={8}>
+                  <Ionicons name="chevron-forward" size={20} color={colors.slate} />
+                </Pressable>
+                <Pressable onPress={() => setMese(new Date(anno + 1, meseIdx, 1))} hitSlop={8}>
+                  <Ionicons name="play-forward" size={16} color={colors.slate} />
+                </Pressable>
+              </View>
+              <View style={s.settRow}>
+                {GIORNI_SETT_CORTI.map((g, i) => <Text key={i} style={s.settText}>{g}</Text>)}
+              </View>
+              <View style={s.griglia}>
+                {celle.map((d, i) => {
+                  if (d === null) return <View key={i} style={s.cella} />;
+                  const eOggi = anno === oggi.getFullYear() && meseIdx === oggi.getMonth() && d === oggi.getDate();
+                  const eSelezionato = d === selezionatoGiorno;
+                  return (
+                    <Pressable
+                      key={i} style={[s.cella, s.cellaBtn, eSelezionato && { backgroundColor: colors.gold }]}
+                      onPress={() => onScegli(`${anno}-${pad2(meseIdx + 1)}-${pad2(d)}`)}
+                    >
+                      <Text style={[s.cellaText, eOggi && !eSelezionato && { color: colors.gold, fontWeight: '800' }, eSelezionato && { color: colors.navyDeep, fontWeight: '800' }]}>{d}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function makeStylesCalendario(colors: AppColors) {
+  return StyleSheet.create({
+    sfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+    box: { width: '100%', maxWidth: 340, borderRadius: Radius.modal, overflow: 'hidden', padding: Spacing.lg },
+    titolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body, textAlign: 'center', marginBottom: Spacing.sm },
+    annoRiga: { paddingVertical: 10, alignItems: 'center' },
+    annoRigaText: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+    headTitoloBtn: { flex: 1, alignItems: 'center' },
+    headTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
+    settRow: { flexDirection: 'row', marginBottom: 4 },
+    settText: { flex: 1, textAlign: 'center', color: colors.slate, fontSize: Font.tiny, fontWeight: '700' },
+    griglia: { flexDirection: 'row', flexWrap: 'wrap' },
+    cella: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+    cellaBtn: { borderRadius: 999 },
+    cellaText: { color: colors.navyDeep, fontSize: Font.small },
+  });
+}
 
 export default function ModificaProfilo() {
   const { me, refreshMe, demoMode } = useAuth();
@@ -29,13 +168,14 @@ export default function ModificaProfilo() {
   const [cognome, setCognome] = useState(me?.cognome ?? '');
   const [genere, setGenere] = useState<Genere | ''>(me?.genere ?? '');
   const [dataNascita, setDataNascita] = useState(me?.data_nascita ?? '');
+  const [dataNascitaTesto, setDataNascitaTesto] = useState(isoAItaliano(me?.data_nascita ?? ''));
+  const [calendarioAperto, setCalendarioAperto] = useState(false);
   const [codiceFiscale, setCodiceFiscale] = useState(me?.codice_fiscale ?? '');
   // Contatti
   const [telefono, setTelefono] = useState(me?.telefono ?? '');
   const [email, setEmail] = useState(me?.email ?? '');
   // Preferenze di gioco
   const [nickname, setNickname] = useState(me?.profilo?.nickname ?? '');
-  const [sportPraticati, setSportPraticati] = useState<string[]>(me?.sport_preferiti ?? []);
   const [mano, setMano] = useState<ManoDominante | ''>(me?.mano_dominante ?? '');
   const [posizione, setPosizione] = useState<Posizione | ''>(me?.posizione ?? '');
   // Disponibilità oraria
@@ -47,11 +187,25 @@ export default function ModificaProfilo() {
   });
   const toggleSezione = (k: keyof typeof sezioniAperte) => setSezioniAperte((p) => ({ ...p, [k]: !p[k] }));
 
-  const toggleSport = (sp: string) => {
-    setSportPraticati((prev) => prev.includes(sp) ? prev.filter((x) => x !== sp) : [...prev, sp]);
+  // Data di nascita digitata in formato italiano (GG-MM-AAAA, fix utente
+  // esplicito) — i trattini si inseriscono da soli mentre si scrivono solo
+  // le cifre (stesso comfort di un vero input data), poi convertita in ISO
+  // solo quando è una data completa/valida; finché l'utente sta ancora
+  // scrivendo resta solo testo, non un errore.
+  const onCambiaTestoData = (testo: string) => {
+    const cifre = testo.replace(/\D/g, '').slice(0, 8);
+    let formattato = cifre;
+    if (cifre.length > 4) formattato = `${cifre.slice(0, 2)}-${cifre.slice(2, 4)}-${cifre.slice(4)}`;
+    else if (cifre.length > 2) formattato = `${cifre.slice(0, 2)}-${cifre.slice(2)}`;
+    setDataNascitaTesto(formattato);
+    const iso = italianoAIso(formattato);
+    if (iso) setDataNascita(iso);
   };
-  const tuttiGliSport = sportPraticati.length === SPORT_DISPONIBILI.length;
-  const toggleTuttiSport = () => setSportPraticati(tuttiGliSport ? [] : [...SPORT_DISPONIBILI]);
+  const onSceglieCalendario = (iso: string) => {
+    setDataNascita(iso);
+    setDataNascitaTesto(isoAItaliano(iso));
+    setCalendarioAperto(false);
+  };
 
   const toggleGiorno = (giorno: string) => {
     setDisponibilita((prev) => {
@@ -87,7 +241,6 @@ export default function ModificaProfilo() {
       data_nascita: dataNascita || null,
       codice_fiscale: codiceFiscale || null,
       telefono, email,
-      sport_preferiti: sportPraticati,
       mano_dominante: (mano || null) as any,
       posizione: (posizione || null) as any,
       disponibilita_oraria: disponibilita,
@@ -126,7 +279,22 @@ export default function ModificaProfilo() {
               <Chip label="F" active={genere === 'F'} onPress={() => setGenere('F')} />
             </View>
           </View>
-          <Field label="Data di nascita" value={dataNascita ?? ''} onChangeText={setDataNascita} placeholder="AAAA-MM-GG" />
+          <View>
+            <Muted style={{ marginBottom: Spacing.sm }}>Data di nascita</Muted>
+            <View style={s.dataRiga}>
+              <Input
+                style={{ flex: 1 }} value={dataNascitaTesto} onChangeText={onCambiaTestoData}
+                placeholder="GG-MM-AAAA" keyboardType="number-pad" maxLength={10}
+              />
+              <Pressable style={s.dataCalendarioBtn} onPress={() => setCalendarioAperto(true)}>
+                <Ionicons name="calendar-outline" size={20} color={colors.navyDeep} />
+              </Pressable>
+            </View>
+          </View>
+          <CalendarioDataNascita
+            visibile={calendarioAperto} valoreIso={dataNascita ?? ''}
+            onChiudi={() => setCalendarioAperto(false)} onScegli={onSceglieCalendario}
+          />
           <Field label="Codice fiscale" value={codiceFiscale ?? ''} onChangeText={setCodiceFiscale} autoCapitalize="characters" />
         </Sezione>
 
@@ -135,16 +303,12 @@ export default function ModificaProfilo() {
           <Field label="Email" value={email ?? ''} onChangeText={setEmail} placeholder="nome@esempio.it" keyboardType="email-address" autoCapitalize="none" />
         </Sezione>
 
+        {/* "Sport praticati" rimosso (fix utente esplicito, confermato): si
+            popola già da solo — un giocatore aggiunto a una prenotazione di
+            uno sport lo acquisisce automaticamente tra i preferiti (vedi
+            backend _sincronizza_sport_preferiti), un campo manuale qui
+            sarebbe ridondante. */}
         <Sezione titolo="Preferenze di gioco" aperta={sezioniAperte.preferenze} onToggle={() => toggleSezione('preferenze')}>
-          <View>
-            <Muted style={{ marginBottom: Spacing.sm }}>Sport praticati</Muted>
-            <View style={s.chips}>
-              <Chip label="Tutti" active={tuttiGliSport} onPress={toggleTuttiSport} />
-              {SPORT_DISPONIBILI.map((sp) => (
-                <Chip key={sp} label={sp} active={sportPraticati.includes(sp)} onPress={() => toggleSport(sp)} />
-              ))}
-            </View>
-          </View>
           <View>
             <Muted style={{ marginBottom: Spacing.sm }}>Mano dominante</Muted>
             <View style={s.chips}>
@@ -244,6 +408,11 @@ function makeStyles(colors: AppColors) {
     scroll: { padding: Spacing.lg, paddingTop: 0, gap: Spacing.lg },
     chips: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
     riga2: { flexDirection: 'row', gap: Spacing.md },
+    dataRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    dataCalendarioBtn: {
+      width: 50, height: 50, borderRadius: Radius.control, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: colors.navyCard, borderWidth: 1, borderColor: colors.navyLine + '55',
+    },
     sezione: {},
     sezioneHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.lg, margin: -Spacing.lg, marginBottom: 0 },
     sezioneTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body, textTransform: 'uppercase', letterSpacing: 0.3 },

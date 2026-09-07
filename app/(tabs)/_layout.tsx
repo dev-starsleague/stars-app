@@ -16,8 +16,10 @@ import { MatchmakingPanel } from '../../components/MatchmakingPanel';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type IconName = keyof typeof Ionicons.glyphMap;
-const ICON: Record<string, IconName> = { index: 'home-outline', classifiche: 'trophy-outline', eventi: 'flash-outline', stars: 'star-outline' };
-const ICON_ACTIVE: Record<string, IconName> = { index: 'home', classifiche: 'trophy', eventi: 'flash', stars: 'star' };
+// "stars" (circuito nazionale) tolto dalla navbar, al suo posto "stars-coin"
+// (Shop) — fix utente esplicito: "rimuovi STAR dalla NAVBAR e spostaci SHOP".
+const ICON: Record<string, IconName> = { index: 'home-outline', classifiche: 'trophy-outline', eventi: 'flash-outline', 'stars-coin': 'storefront-outline' };
+const ICON_ACTIVE: Record<string, IconName> = { index: 'home', classifiche: 'trophy', eventi: 'flash', 'stars-coin': 'storefront' };
 const PILL_HEIGHT = 66;
 const FAB_SIZE = 78;
 
@@ -38,7 +40,7 @@ const NAVBAR_SCURA = { bg: 'rgba(30, 49, 74, 0.82)', border: 'rgba(255, 255, 255
 // solo dall'header, non dalla navbar.
 //
 // 5 SLOT VERI in riga (fix utente esplicito, non un FAB flottante calcolato
-// sopra il bordo tra due tab): Home, Classifiche, [stella], Eventi, Stars,
+// sopra il bordo tra due tab): Home, Classifiche, [stella], Eventi, Shop,
 // tutti flex:1 dello stesso row — la stella è il 3° di 5 slot uguali, quindi
 // è il centro esatto per costruzione, non per un calcolo di larghezza
 // misurata. Per farla sporgere sopra il bordo della pillola senza che
@@ -49,7 +51,7 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { scheme, colors, glass } = useTheme();
   const nav = NAVBAR_SCURA;
   const byName = (n: string) => state.routes.find((r) => r.name === n)!;
-  const slots = [byName('index'), byName('classifiche'), null, byName('eventi'), byName('stars')];
+  const slots = [byName('index'), byName('classifiche'), null, byName('eventi'), byName('stars-coin')];
   // Stessa stella grigia (bfc9d5) in entrambi i temi (fix utente
   // esplicito: "metti la stella grigia anche per il tema scuro" — prima
   // era bfc9d5 solo in chiaro, 1d314a/blu scuro in scuro). Sollevato qui
@@ -442,9 +444,13 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="classifiche" options={{ title: 'Classifiche' }} />
       <Tabs.Screen name="eventi" options={{ title: 'Eventi' }} />
-      <Tabs.Screen name="stars" options={{ title: 'Stars' }} />
+      <Tabs.Screen name="stars-coin" options={{ title: 'Shop' }} />
       <Tabs.Screen name="profilo" options={{ title: 'Profilo', href: null }} />
       <Tabs.Screen name="prenota" options={{ href: null }} />
+      {/* Circuito nazionale: tolto dalla navbar (fix utente esplicito,
+          sostituito da Shop), ma la schermata resta raggiungibile — non
+          cancellata, solo non più una tab visibile. */}
+      <Tabs.Screen name="stars" options={{ title: 'Stars', href: null }} />
       {/* Schermate "di dettaglio" raggiunte con router.push, non tab vere
           (href:null) — stanno comunque DENTRO questo Tabs navigator (non
           nello Stack radice come prima) così la navbar flottante resta
@@ -453,7 +459,6 @@ export default function TabsLayout() {
           vedere sia la navbar che l'header" — l'header lo aggiunge ogni
           schermata da sé con <AppHeader/>, la navbar la eredita gratis
           restando in questo stesso navigator). */}
-      <Tabs.Screen name="stars-coin" options={{ href: null }} />
       <Tabs.Screen name="impegni" options={{ href: null }} />
       <Tabs.Screen name="amici" options={{ href: null }} />
       <Tabs.Screen name="modifica-profilo" options={{ href: null }} />

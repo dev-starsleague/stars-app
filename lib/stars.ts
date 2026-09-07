@@ -1,6 +1,24 @@
 import type { Fascia } from '../types/models';
 import type { AppColors } from '../constants/theme';
 
+// Stesso tasso fisso, uguale per tutti i centri, di stars-system/src/lib/
+// coin.js (1 Stars Coin = €0,01 — fix utente esplicito lì, non
+// configurabile): usato qui per mostrare SEMPRE un controvalore in € anche
+// quando il prodotto/abbonamento non ne ha uno impostato esplicitamente
+// dallo staff (fix utente esplicito: "voglio poter vedere i prodotti con
+// cifra in Stars Coin e in €"). Il prezzo in € impostato a mano dallo staff
+// (prezzo_euro) resta sempre la fonte di verità quando c'è — questo è solo
+// il fallback per mostrare comunque un controvalore stimato.
+export const VALORE_COIN_EURO = 0.01;
+export function coinInEuro(coin: number): number {
+  return (Number(coin) || 0) * VALORE_COIN_EURO;
+}
+/** "4,50 €" — stessa notazione italiana (virgola) usata per i prezzi in
+ *  euro impostati a mano dallo staff, per un controvalore stimato. */
+export function formattaEuro(euro: number): string {
+  return `${euro.toFixed(2).replace('.', ',')} €`;
+}
+
 // Soglie fasce basate sullo score di ranking (padel), stile PSL.
 // Spark = non ancora stimato / nessuna partita.
 const SOGLIE: { fascia: Fascia; min: number }[] = [

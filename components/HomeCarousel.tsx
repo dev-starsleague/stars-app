@@ -648,6 +648,24 @@ function SocialSlide({ insights, colors, s, onApriGiocatore }: {
   );
 }
 
+// Stessa scheda "Compagno/Nemesi/Preferito" della slide 3 del carosello Home
+// (fix utente esplicito: "metti la 3° scheda della sezione ADV all'interno
+// del profilo personale") — qui esportata come componente a sé, con la sua
+// stessa larghezza/stile (larghezzaScheda ricalcolata allo stesso modo,
+// niente più giostra di scroll intorno: una card fissa, non una pagina di
+// un carosello) così può vivere anche fuori dalla Home, in profilo.tsx.
+export function SocialInsightsCard({ giocatoreId, sport, onApriGiocatore }: {
+  giocatoreId: string; sport: string; onApriGiocatore: (id: string) => void;
+}) {
+  const { colors, glass } = useTheme();
+  const { width: larghezzaFinestra } = useWindowDimensions();
+  const larghezzaScheda = Math.min(390, larghezzaFinestra - Spacing.lg * 2);
+  const s = useMemo(() => makeStyles(colors, glass, larghezzaScheda), [colors, glass, larghezzaScheda]);
+  const [insights, setInsights] = useState<InsightsSociali>(INSIGHTS_VUOTI);
+  useEffect(() => { getInsightsSociali(giocatoreId, sport).then(setInsights); }, [giocatoreId, sport]);
+  return <SocialSlide insights={insights} colors={colors} s={s} onApriGiocatore={onApriGiocatore} />;
+}
+
 type Insight = NonNullable<InsightsSociali['compagnoPreferito']>;
 // Micro-copy contestuale sotto ogni colonna (fix utente esplicito, mockup
 // condiviso: "Ottima intesa!", "Sfida aperta!", "Dominio totale!") — deriva

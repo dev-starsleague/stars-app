@@ -8,7 +8,8 @@ import { useAuth } from '../../lib/auth';
 import { useSport } from '../../lib/sport';
 import { useTheme } from '../../lib/theme';
 import { apiUrl } from '../../lib/apiClient';
-import { getCentri, getProdottiShop, getAbbonamentiShop, getStarsCoinPerCentro, centriPreferiti, toggleCentroPreferito, acquistaProdotto, acquistaAbbonamento } from '../../lib/api';
+import { getCentri, getProdottiShop, getAbbonamentiShop, getStarsCoinPerCentro, getTotaleCoinSpeso, centriPreferiti, toggleCentroPreferito, acquistaProdotto, acquistaAbbonamento } from '../../lib/api';
+import { coinInEuro, formattaEuro } from '../../lib/stars';
 import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented, Button } from '../../components/ui';
@@ -17,9 +18,24 @@ import type { Centro, ShopProdotto, AbbonamentoTemplate } from '../../types/mode
 
 type SchedaShop = 'prodotti' | 'abbonamenti';
 type FiltroCondizione = 'tutti' | 'nuovo' | 'usato';
+type VistaProdotti = 'griglia' | 'elenco';
 
 function immagineUri(url: string): string {
   return url.startsWith('http') ? url : apiUrl(url);
+}
+
+// Controvalore in € da MOSTRARE accanto al prezzo in SC — SEMPRE calcolato
+// dal tasso fisso (1 SC = €0,01, dato hardcoded — fix utente esplicito:
+// "sistema tutte le cifre"), MAI dal campo prezzo_euro impostato a mano
+// dallo staff: quel campo può discostarsi dal tasso reale (es. un
+// abbonamento con prezzo_coin=450 ma prezzo_euro=45, invece dei €4,50
+// corretti) e mostrarlo creerebbe corrispettivi sbagliati/incoerenti tra
+// loro. prezzo_euro resta comunque l'importo REALE addebitato se il
+// giocatore sceglie di pagare in € nella modale di acquisto (una scelta di
+// business dello staff, non un controvalore informativo) — non tocco
+// quella logica, solo questa vetrina.
+function euroDaMostrare(prezzoCoin: number): number {
+  return coinInEuro(prezzoCoin);
 }
 
 // Il backend è condiviso da centinaia di centri: lo Shop aggrega i prodotti
@@ -38,6 +54,7 @@ export default function StarsCoin() {
   const params = useLocalSearchParams<{ centroId?: string; prodottoId?: string; abbonamentoId?: string }>();
 
   const [saldi, setSaldi] = useState<{ centro: Centro; saldo: number }[]>([]);
+  const [totaleSpeso, setTotaleSpeso] = useState(0);
   const [centri, setCentri] = useState<Centro[]>([]);
   const [preferiti, setPreferiti] = useState<Set<string>>(new Set());
   const [soloPreferiti, setSoloPreferiti] = useState(false);
@@ -49,6 +66,11 @@ export default function StarsCoin() {
   const [prodotti, setProdotti] = useState<ShopProdotto[] | null>(null);
   const [abbonamenti, setAbbonamenti] = useState<AbbonamentoTemplate[] | null>(null);
   const [filtroCondizione, setFiltroCondizione] = useState<FiltroCondizione>('tutti');
+  // Griglia (immagine grande, com'era) o elenco compatto (fix utente
+  // esplicito: "la visualizzazione deve poter essere sia a griglia che ad
+  // elenco") — solo per i Prodotti: gli Abbonamenti sono già un elenco per
+  // natura (niente immagine), non hanno una controparte "a griglia" sensata.
+  const [vistaProdotti, setVistaProdotti] = useState<VistaProdotti>('griglia');
   const [dettaglioProdotto, setDettaglioProdotto] = useState<ShopProdotto | null>(null);
   const [dettaglioAbbonamento, setDettaglioAbbonamento] = useState<AbbonamentoTemplate | null>(null);
   // Acquisto: variante+metodo di pagamento scelti per il prodotto aperto
@@ -60,6 +82,7 @@ export default function StarsCoin() {
   useEffect(() => {
     if (!me) return;
     getStarsCoinPerCentro(me.id).then(setSaldi);
+    getTotaleCoinSpeso(me.id).then(setTotaleSpeso);
     getCentri().then(setCentri);
     setPreferiti(centriPreferiti(me));
   }, [me]);
@@ -129,7 +152,7 @@ export default function StarsCoin() {
     const nomeProdotto = dettaglioProdotto.nome;
     setDettaglioProdotto(null);
     if (centroShop) getProdottiShop(centroShop.id).then(setProdotti);
-    if (me) getStarsCoinPerCentro(me.id).then(setSaldi);
+    if (me) { getStarsCoinPerCentro(me.id).then(setSaldi); getTotaleCoinSpeso(me.id).then(setTotaleSpeso); }
     avvisa(
       'Acquisto confermato',
       metodoScelto === 'coin'
@@ -156,7 +179,7 @@ export default function StarsCoin() {
     const nomeAbb = dettaglioAbbonamento.nome;
     setDettaglioAbbonamento(null);
     if (centroShop) getAbbonamentiShop(centroShop.id).then(setAbbonamenti);
-    if (me) getStarsCoinPerCentro(me.id).then(setSaldi);
+    if (me) { getStarsCoinPerCentro(me.id).then(setSaldi); getTotaleCoinSpeso(me.id).then(setTotaleSpeso); }
     avvisa(
       'Acquisto confermato',
       metodoScelto === 'coin'
@@ -196,6 +219,12 @@ export default function StarsCoin() {
     .filter((c) => !regione || c.regione === regione)
     .filter((c) => !provincia || c.provincia === provincia);
 
+  // Saldo del singolo centro, per la card cliccabile sotto (fix utente
+  // esplicito: "rimuovi la lista degli stars coin per ogni circolo ed
+  // inserisci anzi delle schede cliccabili... con il quantitativo di Stars
+  // Coin di quel centro specifico" — non più un elenco separato).
+  const saldoPerCentro = useMemo(() => new Map(saldi.map((s) => [s.centro.id, s.saldo])), [saldi]);
+
   const onToggleRegione = (r: string) => {
     setRegione((cur) => (cur === r ? null : r));
     setProvincia(null);
@@ -223,17 +252,26 @@ export default function StarsCoin() {
         {!centroShop && (
           <>
             <Text style={s.sectionTitle}>Il tuo saldo</Text>
-            <Card style={s.saldoCard}>
-              <Ionicons name="star" size={22} color={colors.gold} />
-              <Text style={s.saldoTotale}>{totale} SC</Text>
-            </Card>
-            {saldi.length === 0 && <Muted style={{ marginBottom: Spacing.lg }}>Nessun saldo accumulato ancora.</Muted>}
-            {saldi.map(({ centro, saldo }) => (
-              <View key={centro.id} style={s.saldoRiga}>
-                <Text style={s.saldoCentro}>{centro.nome}</Text>
-                <Text style={s.saldoValore}>{Math.round(saldo)} SC</Text>
-              </View>
-            ))}
+            {/* 2 box (fix utente esplicito): saldo totale + quanto hai
+                risparmiato pagando in Star Coin invece che in contanti —
+                stesso tasso fisso di conversione di stars-system (1 SC =
+                €0,01, vedi lib/stars.ts coinInEuro). */}
+            <View style={s.saldiRow}>
+              <Card style={s.saldoBox}>
+                <View style={s.saldoBoxInner}>
+                  <Ionicons name="star" size={22} color={colors.gold} />
+                  <Text style={s.saldoBoxValore}>{totale} SC</Text>
+                  <Muted style={s.saldoBoxLabel}>Saldo totale</Muted>
+                </View>
+              </Card>
+              <Card style={s.saldoBox}>
+                <View style={s.saldoBoxInner}>
+                  <Ionicons name="wallet-outline" size={22} color={colors.green} />
+                  <Text style={s.saldoBoxValore}>{Math.round(totaleSpeso)} SC</Text>
+                  <Muted style={s.saldoBoxLabel}>Hai risparmiato {formattaEuro(coinInEuro(totaleSpeso))}</Muted>
+                </View>
+              </Card>
+            </View>
 
             <Text style={[s.sectionTitle, { marginTop: Spacing.xl }]}>Shop</Text>
             <Muted style={{ marginBottom: Spacing.md }}>Scegli il centro per vedere i suoi prodotti.</Muted>
@@ -269,6 +307,12 @@ export default function StarsCoin() {
                     <Text style={s.nome}>{c.nome}</Text>
                     {(c.citta || c.provincia) ? <Muted>{[c.citta, c.provincia].filter(Boolean).join(' · ')}</Muted> : null}
                   </View>
+                  {saldoPerCentro.has(c.id) && (
+                    <View style={s.centroSaldoPill}>
+                      <Ionicons name="star" size={12} color={colors.gold} />
+                      <Text style={s.centroSaldoPillTesto}>{Math.round(saldoPerCentro.get(c.id)!)} SC</Text>
+                    </View>
+                  )}
                   <Pressable hitSlop={8} onPress={() => onTogglePreferito(c)}>
                     <Ionicons name={preferiti.has(c.id) ? 'star' : 'star-outline'} size={20} color={preferiti.has(c.id) ? colors.gold : colors.slate} />
                   </Pressable>
@@ -290,10 +334,18 @@ export default function StarsCoin() {
 
             {scheda === 'prodotti' ? (
               <>
-                <View style={s.filtriRow}>
-                  <Chip label="Tutti" active={filtroCondizione === 'tutti'} onPress={() => setFiltroCondizione('tutti')} />
-                  <Chip label="Nuovo" active={filtroCondizione === 'nuovo'} onPress={() => setFiltroCondizione('nuovo')} />
-                  <Chip label="Usato" active={filtroCondizione === 'usato'} onPress={() => setFiltroCondizione('usato')} />
+                <View style={s.filtriRowTraToggle}>
+                  <View style={s.filtriRow}>
+                    <Chip label="Tutti" active={filtroCondizione === 'tutti'} onPress={() => setFiltroCondizione('tutti')} />
+                    <Chip label="Nuovo" active={filtroCondizione === 'nuovo'} onPress={() => setFiltroCondizione('nuovo')} />
+                    <Chip label="Usato" active={filtroCondizione === 'usato'} onPress={() => setFiltroCondizione('usato')} />
+                  </View>
+                  {/* Griglia/elenco (fix utente esplicito: "la visualizzazione
+                      deve poter essere sia a griglia che ad elenco"). */}
+                  <View style={s.vistaToggle}>
+                    <IconButton icon="grid-outline" size={34} variant={vistaProdotti === 'griglia' ? 'solid' : 'glass'} onPress={() => setVistaProdotti('griglia')} />
+                    <IconButton icon="list-outline" size={34} variant={vistaProdotti === 'elenco' ? 'solid' : 'glass'} onPress={() => setVistaProdotti('elenco')} />
+                  </View>
                 </View>
 
                 {prodotti === null && <ActivityIndicator color={colors.gold} style={{ marginTop: Spacing.xl }} />}
@@ -302,27 +354,62 @@ export default function StarsCoin() {
                     {prodotti.length === 0 ? 'Nessun prodotto disponibile in questo centro.' : `Nessun prodotto per ${sportAttivo}.`}
                   </Muted>
                 )}
-                <View style={s.grid}>
-                  {prodottiFiltrati.map((p) => (
-                    <Pressable key={p.id} style={s.prodCard} onPress={() => setDettaglioProdotto(p)}>
-                      <View style={s.prodImgBox}>
-                        {p.immagine_url
-                          ? <Image source={{ uri: immagineUri(p.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                          : <Ionicons name="pricetag-outline" size={36} color={colors.gold} />}
-                        {p.condizione === 'usato' && <View style={s.badgeUsato}><Text style={s.badgeUsatoText}>USATO</Text></View>}
-                        {p.sport && <View style={s.badgeSport}><Text style={s.badgeSportText}>{p.sport}</Text></View>}
-                      </View>
-                      <View style={s.prodInfo}>
-                        <Text style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
-                        <View style={s.prodPrezzoRow}>
-                          <Ionicons name="star" size={14} color={colors.gold} />
-                          <Text style={s.prodPrezzo}>{Math.round(p.prezzo_coin)} SC</Text>
+                {vistaProdotti === 'griglia' ? (
+                  <View style={s.grid}>
+                    {prodottiFiltrati.map((p) => (
+                      <Pressable key={p.id} style={s.prodCard} onPress={() => setDettaglioProdotto(p)}>
+                        <View style={s.prodImgBox}>
+                          {p.immagine_url
+                            ? <Image source={{ uri: immagineUri(p.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                            : <Ionicons name="pricetag-outline" size={36} color={colors.gold} />}
+                          {p.condizione === 'usato' && <View style={s.badgeUsato}><Text style={s.badgeUsatoText}>USATO</Text></View>}
+                          {p.sport && <View style={s.badgeSport}><Text style={s.badgeSportText}>{p.sport}</Text></View>}
                         </View>
-                        {p.prezzo_euro != null && <Muted style={{ fontSize: Font.tiny }}>oppure {p.prezzo_euro} €</Muted>}
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
+                        <View style={s.prodInfo}>
+                          <Text style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
+                          <View style={s.prodPrezzoRow}>
+                            <Ionicons name="star" size={14} color={colors.gold} />
+                            <Text style={s.prodPrezzo}>{Math.round(p.prezzo_coin)} SC</Text>
+                          </View>
+                          <Muted style={{ fontSize: Font.tiny }}>oppure {formattaEuro(euroDaMostrare(p.prezzo_coin))}</Muted>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ gap: Spacing.sm }}>
+                    {prodottiFiltrati.map((p) => (
+                      <Pressable key={p.id} onPress={() => setDettaglioProdotto(p)}>
+                        <Card style={s.prodRigaElenco}>
+                          <View style={s.prodImgBoxElenco}>
+                            {p.immagine_url
+                              ? <Image source={{ uri: immagineUri(p.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                              : <Ionicons name="pricetag-outline" size={22} color={colors.gold} />}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.prodNome} numberOfLines={1}>{p.nome}</Text>
+                            {/* minHeight fisso anche da vuota (fix utente
+                                esplicito: "alcune più corte, altre più
+                                lunghe") — un prodotto senza condizione/sport
+                                non deve rendere la sua riga più bassa delle
+                                altre. */}
+                            <View style={{ flexDirection: 'row', gap: 6, minHeight: 16 }}>
+                              {p.condizione === 'usato' && <Muted style={{ fontSize: Font.tiny }}>Usato</Muted>}
+                              {p.sport && <Muted style={{ fontSize: Font.tiny }}>{p.sport}</Muted>}
+                            </View>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <View style={s.prodPrezzoRow}>
+                              <Ionicons name="star" size={13} color={colors.gold} />
+                              <Text style={s.prodPrezzo}>{Math.round(p.prezzo_coin)} SC</Text>
+                            </View>
+                            <Muted style={{ fontSize: Font.tiny }}>{formattaEuro(euroDaMostrare(p.prezzo_coin))}</Muted>
+                          </View>
+                        </Card>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </>
             ) : (
               <>
@@ -350,7 +437,7 @@ export default function StarsCoin() {
                           <Ionicons name="star" size={13} color={colors.gold} />
                           <Text style={s.prodPrezzo}>{Math.round(a.prezzo_coin)} SC</Text>
                         </View>
-                        {a.prezzo_euro != null && <Muted>oppure {a.prezzo_euro} €</Muted>}
+                        <Muted>{formattaEuro(euroDaMostrare(a.prezzo_coin))}</Muted>
                       </View>
                     </Card>
                   </Pressable>
@@ -393,7 +480,7 @@ export default function StarsCoin() {
                   <View style={s.dettaglioPrezzoRow}>
                     <Ionicons name="star" size={20} color={colors.gold} />
                     <Text style={s.dettaglioPrezzo}>{Math.round(dettaglioProdotto.prezzo_coin)} SC</Text>
-                    {dettaglioProdotto.prezzo_euro != null && <Muted>oppure {dettaglioProdotto.prezzo_euro} €</Muted>}
+                    <Muted>oppure {formattaEuro(euroDaMostrare(dettaglioProdotto.prezzo_coin))}</Muted>
                   </View>
                   <Muted style={{ marginTop: Spacing.sm }}>
                     {dettaglioProdotto.stock == null && dettaglioProdotto.varianti.length === 0 ? 'Scorte illimitate' : !esaurito ? `${dettaglioProdotto.stock ?? ''} disponibili`.trim() : null}
@@ -496,7 +583,7 @@ export default function StarsCoin() {
                   <View style={s.dettaglioPrezzoRow}>
                     <Ionicons name="star" size={20} color={colors.gold} />
                     <Text style={s.dettaglioPrezzo}>{Math.round(dettaglioAbbonamento.prezzo_coin)} SC</Text>
-                    {dettaglioAbbonamento.prezzo_euro != null && <Muted>oppure {dettaglioAbbonamento.prezzo_euro} €</Muted>}
+                    <Muted>oppure {formattaEuro(euroDaMostrare(dettaglioAbbonamento.prezzo_coin))}</Muted>
                   </View>
 
                   <Text style={s.acquistaLabel}>Come vuoi pagare?</Text>
@@ -553,15 +640,41 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     title: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '800' },
     scroll: { padding: Spacing.lg, paddingTop: 0 },
     sectionTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.sm },
-    saldoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-    saldoTotale: { color: colors.gold, fontSize: Font.h1, fontWeight: '900' },
-    saldoRiga: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.navyLine + '22' },
-    saldoCentro: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
-    saldoValore: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
+    // 2 box saldo/risparmio affiancati (fix utente esplicito), stesso
+    // linguaggio delle Card generiche dell'app. IMPORTANTE: `alignItems`
+    // passato allo `style` di <Card> non va MAI usato per centrare i figli
+    // quando la Card è anche vincolata in larghezza da un flex del
+    // genitore (qui flex:1 dentro saldiRow) — <Card> duplica alignItems/
+    // flexDirection/gap/justifyContent anche sul nodo ESTERNO che porta
+    // l'ombra (per far funzionare `style={{flexDirection:'row', ...}}`
+    // nei tanti punti dove Card avvolge una riga), ma quel nodo esterno ha
+    // come UNICO figlio il nodo interno bordato/sfocato — con
+    // alignItems:'center' (asse incrociato = orizzontale, in colonna) il
+    // figlio si RESTRINGE al contenuto invece di riempire la Card,
+    // lasciando il vero riquadro bianco più piccolo e "fluttuante" dentro
+    // l'area piena (larga quanto flex:1) del nodo esterno — esattamente il
+    // bug "sembra ci sia una box dentro un'altra" segnalato dall'utente.
+    // Fix: alignItems/gap SOLO su un View interno vero, mai sullo style di
+    // Card quando c'è un vincolo di larghezza esterno come flex:1 qui.
+    saldiRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.sm },
+    saldoBox: { flex: 1 },
+    saldoBoxInner: { alignItems: 'center', gap: 4 },
+    saldoBoxValore: { color: colors.navyDeep, fontSize: Font.h2, fontWeight: '900' },
+    saldoBoxLabel: { fontSize: Font.tiny, textAlign: 'center' },
     filtriRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.sm },
+    filtriRowTraToggle: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm },
+    vistaToggle: { flexDirection: 'row', gap: 6 },
     chipScroll: { marginBottom: Spacing.sm },
     row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
     nome: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    // Saldo del centro specifico, dentro la sua card cliccabile (fix utente
+    // esplicito: "delle schede cliccabili... con il quantitativo di Stars
+    // Coin di quel centro specifico").
+    centroSaldoPill: {
+      flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.gold + '18',
+      paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.pill,
+    },
+    centroSaldoPillTesto: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.tiny },
 
     // Griglia prodotti: 2 colonne "a quadrati", immagine reale grande in
     // proporzione 1:1 (non più un'iconcina 70px persa in un angolo) — fix
@@ -582,7 +695,24 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     prodPrezzoRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     prodPrezzo: { color: colors.navyDeep, fontWeight: '900', fontSize: Font.body },
 
-    abbCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
+    // Vista elenco (fix utente esplicito: "griglia o elenco") — riga
+    // compatta, stesso linguaggio di abbCard sotto: immagine piccola invece
+    // del quadrato grande della griglia.
+    prodRigaElenco: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+    prodImgBoxElenco: {
+      width: 48, height: 48, borderRadius: Radius.sm, backgroundColor: colors.navyCard,
+      alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    },
+
+    // alignItems:'flex-start' (non più 'center'): con l'aggiunta del
+    // controvalore in € SEMPRE mostrato (fix utente esplicito, vedi
+    // euroDaMostrare) il blocco prezzo ha sempre 2 righe come il testo a
+    // sinistra, ma l'allineamento in alto resta comunque più robusto di un
+    // centraggio che dipende dal numero di righe combaciare per caso —
+    // era proprio questo il "problema di visualizzazione" segnalato
+    // (badge/prezzo che saltavano al centro della card quando il testo a
+    // sinistra aveva più righe del prezzo a destra).
+    abbCard: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginBottom: Spacing.sm },
     abbIcon: { width: 44, height: 44, borderRadius: Radius.sm, backgroundColor: colors.navyCard, alignItems: 'center', justifyContent: 'center' },
     abbIconGrande: { width: 56, height: 56, borderRadius: Radius.md, backgroundColor: colors.navyCard, alignItems: 'center', justifyContent: 'center' },
 

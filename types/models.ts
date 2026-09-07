@@ -149,6 +149,10 @@ export interface Prenotazione {
   // matchmaking (fix utente esplicito: "devo poter decidere una preferenza
   // di giorno ed ora") — puramente informativa per lo staff.
   preferenza_attesa?: PreferenzaAttesa | null;
+  // sfida diretta tra due giocatori dal profilo pubblico (fix utente
+  // esplicito: "deve esserci un tasto sfida") — vedi PreferenzaAttesa sopra
+  // per lo stesso principio applicato alla proposta di orario automatica.
+  sfida?: Sfida | null;
   stato_pagamento: StatoPagamento;
   prezzo: number;
   giocatori_extra: string[]; // id giocatori
@@ -178,6 +182,14 @@ export interface PreferenzaAttesa {
   giorno?: string | null; // "Lun"|"Mar"|"Mer"|"Gio"|"Ven"|"Sab"|"Dom" o null = qualsiasi
   inizio?: string | null; // "HH:MM"
   fine?: string | null; // "HH:MM"
+}
+
+/** Sfida diretta tra due giocatori dal profilo pubblico (fix utente
+ *  esplicito: "deve esserci un tasto sfida"). */
+export interface Sfida {
+  da: string; // giocatore_id del mittente
+  a: string; // giocatore_id dello sfidato
+  stato: 'in_attesa' | 'accettata';
 }
 
 // Matchmaking (tasto centrale stella) — vedi GET /matchmaking/cerca.
@@ -458,6 +470,16 @@ export interface CoinSaldo {
   giocatore_id: string;
   centro_id: string;
   saldo: number;
+}
+
+/** Riga di log di un movimento coin (backend/app/models/coin.py) — positivo
+ *  = accredito, negativo = addebito. Usata solo per sommare quanto un
+ *  giocatore ha speso in totale (vedi getTotaleCoinSpeso in lib/api.ts). */
+export interface CoinTransazione {
+  id: string;
+  giocatore_id: string;
+  centro_id: string;
+  importo: number;
 }
 
 // ---- Concetti Stars League (allineati alla demo) ----

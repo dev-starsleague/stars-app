@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SquircleView } from 'react-native-figma-squircle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../lib/auth';
@@ -17,13 +16,15 @@ import type { Prenotazione } from '../types/models';
 
 // Header ridisegnato (fix utente esplicito): niente più logo/nome — a
 // sinistra il toggle tema (sole/luna) e il selettore sport (apre una
-// tendina con tutti gli sport). Il pill Stars Coin non mostra più il saldo,
-// solo il simbolo moneta + "SHOP" (il saldo resta nella scheda dedicata,
-// app/stars-coin.tsx). La campanella ora apre davvero una lista di
-// notifiche interattive, derivate dagli stessi impegni di app/impegni.tsx
-// (pagamenti da saldare, risultati mancanti, promemoria prossimi) — non
-// esiste un'entità "notifiche" nel backend condiviso, quindi sono calcolate
-// da dati reali già disponibili, non finte.
+// tendina con tutti gli sport). Il pill "SHOP" che stava qui a destra è
+// stato tolto (fix utente esplicito: "rimuovi STAR dalla NAVBAR e spostaci
+// SHOP") — Shop si raggiunge ora dalla navbar in basso (vedi
+// app/(tabs)/_layout.tsx), niente più doppia via per la stessa schermata.
+// La campanella ora apre davvero una lista di notifiche interattive,
+// derivate dagli stessi impegni di app/impegni.tsx (pagamenti da saldare,
+// risultati mancanti, promemoria prossimi) — non esiste un'entità
+// "notifiche" nel backend condiviso, quindi sono calcolate da dati reali
+// già disponibili, non finte.
 type TipoNotifica = 'pagamento' | 'risultato' | 'promemoria';
 interface Notifica { id: string; tipo: TipoNotifica; testo: string }
 
@@ -39,38 +40,6 @@ function domaniISO() { const d = new Date(); d.setDate(d.getDate() + 1); return 
 // ieri era "domani") ha un id nuovo e ricompare da sola, comportamento
 // corretto — non è la prenotazione a sparire, è QUELLA specifica notifica.
 const CHIAVE_LETTE = 'stars-notifiche-lette';
-
-// Icona "moneta con stella" per il pill SHOP — UNA moneta sola (fix utente
-// esplicito: via la seconda "a pila", bastava solo appesantire), ma vera:
-// gradiente metallico, bordo esterno rilevato, un anello interno inciso (il
-// bordo zigrinato di una moneta reale) e un riflesso, non un cerchio piatto.
-function CoinIcon({ size = 18 }: { size?: number }) {
-  const { colors } = useTheme();
-  return (
-    <View style={{
-      width: size, height: size, borderRadius: size / 2, overflow: 'hidden',
-      borderWidth: 1, borderColor: 'rgba(120,70,0,0.5)',
-    }}>
-      <LinearGradient
-        colors={[colors.goldSoft, colors.gold, colors.amber]} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      {/* Anello interno inciso, come il bordo zigrinato di una moneta vera */}
-      <View style={{
-        position: 'absolute', top: '10%', left: '10%', right: '10%', bottom: '10%',
-        borderRadius: size / 2, borderWidth: 1, borderColor: 'rgba(120,70,0,0.4)',
-      }} />
-      {/* Riflesso lucido in alto a sinistra */}
-      <View style={{
-        position: 'absolute', top: '10%', left: '14%', width: '34%', height: '16%',
-        borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.6)', transform: [{ rotate: '-30deg' }],
-      }} />
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name="star" size={size * 0.56} color={colors.navyDeep} />
-      </View>
-    </View>
-  );
-}
 
 export function AppHeader() {
   const router = useRouter();
@@ -144,12 +113,6 @@ export function AppHeader() {
         </Pressable>
       </View>
       <View style={s.right}>
-        <Pressable style={[s.coin, { borderColor: glass.regularBorder }]} onPress={() => router.push('/stars-coin')}>
-          <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
-          <CoinIcon size={16} />
-          <Text style={[s.coinText, { color: colors.navyDeep }]}>SHOP</Text>
-        </Pressable>
         <Pressable style={s.bell} onPress={() => setNotificheAperte(true)}>
           <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: glass.regularBg, strokeColor: glass.regularBorder, strokeWidth: 1 }} />
           <Ionicons name="notifications-outline" size={20} color={colors.slateLight} />
@@ -211,8 +174,6 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     sportPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 8, overflow: 'hidden' },
     sportPillText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small },
     right: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    coin: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.pill, borderWidth: 1, overflow: 'hidden' },
-    coinText: { fontWeight: '800', fontSize: Font.small, letterSpacing: 0.3 },
     bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     badge: { position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
     badgeText: { fontSize: 10, fontWeight: '900' },

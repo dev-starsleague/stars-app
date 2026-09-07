@@ -18,6 +18,7 @@ import { apiUrl } from '../../lib/apiClient';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
 import { RankingChart } from '../../components/RankingChart';
+import { SocialInsightsCard } from '../../components/HomeCarousel';
 import { BADGE_CATALOGO } from '../../lib/stars';
 import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
 import type {
@@ -50,6 +51,7 @@ export default function Profilo() {
   const { sportAttivo } = useSport();
   const s = useMemo(() => makeStyles(colors, glass), [colors, glass]);
   const [tab, setTab] = useState<TabP>('ranking');
+  const apriGiocatore = (giocatoreId: string) => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: giocatoreId } });
 
   const [centro, setCentro] = useState<Centro | null>(null);
   const [tessera, setTessera] = useState<Tessera | null>(null);
@@ -192,14 +194,14 @@ export default function Profilo() {
               <ActivityIndicator color={colors.gold} style={{ marginVertical: Spacing.xl }} />
             ) : rankingAttuale ? (
               <>
+                {/* Box "Stato" (Attivo/In verifica) rimossa (fix utente
+                    esplicito: "non ha senso") — il ranking resta l'unico
+                    protagonista, centrale invece che in due riquadri
+                    affiancati di pari peso. */}
                 <View style={s.rankRow}>
                   <View style={s.rankBox}>
                     <Text style={s.rankScore}>{rankingAttuale.ranking.toFixed(2)}</Text>
                     <Text style={s.rankBoxLabel}>RANKING ATTUALE</Text>
-                  </View>
-                  <View style={s.rankBox}>
-                    <Text style={[s.rankScore, { fontSize: 18 }]}>{rankingAttuale.stato === 'attivo' ? 'Attivo' : 'In verifica'}</Text>
-                    <Text style={s.rankBoxLabel}>STATO</Text>
                   </View>
                 </View>
                 <RankingChart eventi={storico} />
@@ -218,6 +220,15 @@ export default function Profilo() {
               </Card>
             )}
           </Card>
+        )}
+
+        {/* Stessa scheda "Compagno/Nemesi/Preferito" della 3° slide del
+            carosello Home (fix utente esplicito: "metti la 3° scheda della
+            sezione ADV all'interno del profilo personale"). */}
+        {tab === 'ranking' && me && (
+          <View style={{ marginTop: Spacing.md, alignItems: 'center' }}>
+            <SocialInsightsCard giocatoreId={me.id} sport={sportAttivo} onApriGiocatore={apriGiocatore} />
+          </View>
         )}
 
         {tab === 'partite' && (

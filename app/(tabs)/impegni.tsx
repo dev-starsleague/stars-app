@@ -13,6 +13,7 @@ import {
   getProdottiNoleggio, getPrestitiNoleggio, assegnaNoleggio, pagaQuotaPrenotazione, pagaInteroCampo,
   quotaGiocatore, getStarsCoinPerCentro, updatePrenotazione, annullaPrenotazione,
   getRounds, creaRound, updateRound, eliminaRound, salvaRisultatoRound,
+  getSfideRicevute, accettaSfida, rifiutaSfida,
 } from '../../lib/api';
 import { erroreSet, vincitoreDaSets, type SetInput } from '../../lib/risultato';
 import { avvisa } from '../../lib/avviso';
@@ -80,13 +81,16 @@ export default function Impegni() {
   const [prossimiAperto, setProssimiAperto] = useState(true);
   const [attesaAperto, setAttesaAperto] = useState(true);
   const [annullandoAttesa, setAnnullandoAttesa] = useState<string | null>(null);
+  const [sfideRicevute, setSfideRicevute] = useState<Prenotazione[]>([]);
+  const [sfideAperto, setSfideAperto] = useState(true);
+  const [gestendoSfida, setGestendoSfida] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!me) return;
-    const [pt, ev, gio, cen] = await Promise.all([
-      getPartiteGiocatore(me.id), getEventiIscritti(me.id), getGiocatori(), getCentri(),
+    const [pt, ev, gio, cen, sfide] = await Promise.all([
+      getPartiteGiocatore(me.id), getEventiIscritti(me.id), getGiocatori(), getCentri(), getSfideRicevute(me.id),
     ]);
-    setPartite(pt); setEventi(ev); setGiocatori(gio); setCentri(cen);
+    setPartite(pt); setEventi(ev); setGiocatori(gio); setCentri(cen); setSfideRicevute(sfide);
     setCaricato(true);
   }, [me]);
   useEffect(() => { load(); }, [load]);
@@ -101,6 +105,33 @@ export default function Impegni() {
     load();
   };
 
+  // Accetta/rifiuta una sfida ricevuta (fix utente esplicito: "se il
+  // giocatore accetta la sfida viene aperta una partita 'in attesa' e viene
+  // fatta una proposta automatica... in base agli orari e i giorni
+  // inseriti, se ci sono. Se non ci sono viene richiesto di inserirli").
+  const accetta = async (p: Prenotazione) => {
+    setGestendoSfida(p.id);
+    const res = await accettaSfida(p.id);
+    setGestendoSfida(null);
+    if (!res.ok) { avvisa('Non è stato possibile accettare la sfida', res.error); return; }
+    load();
+    if (res.propostaTrovata) {
+      avvisa('Sfida accettata!', 'Abbiamo trovato un giorno e un orario compatibili con entrambi: la trovi in "In attesa di abbinamento", contatta il centro per confermarla.');
+    } else {
+      avvisa(
+        'Sfida accettata!',
+        'Non abbiamo trovato un orario compatibile: imposta la tua disponibilità in Modifica profilo per aiutarci a proporvi giorno e ora.',
+        [{ text: 'Più tardi' }, { text: 'Vai alle impostazioni', onPress: () => router.push('/modifica-profilo') }]
+      );
+    }
+  };
+  const rifiuta = async (p: Prenotazione) => {
+    setGestendoSfida(p.id);
+    await rifiutaSfida(p.id);
+    setGestendoSfida(null);
+    load();
+  };
+
   const daFare = useMemo(() => {
     const oggi = oggiISO();
     return partite
@@ -112,7 +143,14 @@ export default function Impegni() {
   // fix utente esplicito) — nessun campo/data/orario, quindi non entrano né
   // in daFare né in inArrivo (entrambe richiedono p.data): sono perpetue
   // nei giorni finché non vengono abbinate o annullate dal giocatore.
-  const inAttesaAbbinamento = useMemo(() => partite.filter((p) => p.stato === 'attesa'), [partite]);
+  // Le sfide ANCORA da accettare hanno una sezione dedicata sotto (mischiarle
+  // qui confonderebbe due flussi diversi) — quelle già accettate invece sono
+  // una partita "in attesa" reale come le altre (in attesa di un campo/orario
+  // da parte dello staff), quindi rientrano qui a tutti gli effetti.
+  const inAttesaAbbinamento = useMemo(
+    () => partite.filter((p) => p.stato === 'attesa' && (!p.sfida || p.sfida.stato === 'accettata')),
+    [partite]
+  );
 
   const inArrivo = useMemo(() => {
     const oggi = oggiISO();
@@ -530,6 +568,42 @@ export default function Impegni() {
               </>
             )}
 
+            {sfideRicevute.length > 0 && (
+              <>
+                <Pressable onPress={() => setSfideAperto((v) => !v)} style={s.sectionHead}>
+                  <Text style={s.sectionTitle}>Sfide ricevute</Text>
+                  <Ionicons name={sfideAperto ? 'chevron-up' : 'chevron-down'} size={18} color={colors.slate} />
+                </Pressable>
+                {sfideAperto && (
+                  <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
+                    {sfideRicevute.map((p) => {
+                      const mittente = p.sfida ? giocatoriMap.get(p.sfida.da) : undefined;
+                      const inCorso = gestendoSfida === p.id;
+                      return (
+                        <Card key={p.id}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                            <IconBadge icon="flash" color={colors.gold} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.rigaTitolo}>{mittente ? `${mittente.nome} ${mittente.cognome}` : 'Un giocatore'} ti ha sfidato</Text>
+                              <Muted>{p.sport ?? 'Sport'} · {centriMap.get(p.centro_id)?.nome ?? 'Centro'}</Muted>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+                            <Pressable disabled={inCorso} onPress={() => rifiuta(p)} style={[s.sfidaAzione, s.sfidaRifiuta]}>
+                              <Text style={[s.sfidaAzioneTesto, { color: colors.red }]}>Rifiuta</Text>
+                            </Pressable>
+                            <Pressable disabled={inCorso} onPress={() => accetta(p)} style={[s.sfidaAzione, { backgroundColor: colors.gold }]}>
+                              <Text style={[s.sfidaAzioneTesto, { color: colors.navyDeep }]}>{inCorso ? 'Un attimo…' : 'Accetta'}</Text>
+                            </Pressable>
+                          </View>
+                        </Card>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            )}
+
             {inAttesaAbbinamento.length > 0 && (
               <>
                 <Pressable onPress={() => setAttesaAperto((v) => !v)} style={s.sectionHead}>
@@ -538,25 +612,40 @@ export default function Impegni() {
                 </Pressable>
                 {attesaAperto && (
                   <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
-                    {inAttesaAbbinamento.map((p) => (
-                      <View key={p.id} style={{ position: 'relative' }}>
-                        <BadgeAttesa />
-                        <Card>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-                            <IconBadge icon="hourglass-outline" />
-                            <View style={{ flex: 1 }}>
-                              <Text style={s.rigaTitolo}>{centriMap.get(p.centro_id)?.nome ?? 'Centro'}</Text>
-                              <Muted>{p.sport ?? 'Sport'} · in attesa di un abbinamento</Muted>
+                    {inAttesaAbbinamento.map((p) => {
+                      // Per una sfida accettata, il "titolo" è l'avversario
+                      // (l'altro id in sfida.da/sfida.a) invece del centro —
+                      // più utile: il centro si vede comunque nel sottotitolo.
+                      const avversarioId = p.sfida ? (p.sfida.da === me?.id ? p.sfida.a : p.sfida.da) : null;
+                      const avversario = avversarioId ? giocatoriMap.get(avversarioId) : null;
+                      const titolo = p.sfida
+                        ? (avversario ? `Sfida con ${avversario.nome} ${avversario.cognome}` : 'Sfida')
+                        : (centriMap.get(p.centro_id)?.nome ?? 'Centro');
+                      const pref = p.preferenza_attesa;
+                      const propostaTesto = pref && (pref.giorno || pref.inizio)
+                        ? `Proposta: ${pref.giorno ?? ''}${pref.inizio ? ` ${pref.inizio}${pref.fine ? `–${pref.fine}` : ''}` : ''}`.trim()
+                        : null;
+                      return (
+                        <View key={p.id} style={{ position: 'relative' }}>
+                          <BadgeAttesa />
+                          <Card>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                              <IconBadge icon={p.sfida ? 'flash' : 'hourglass-outline'} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={s.rigaTitolo}>{titolo}</Text>
+                                <Muted>{p.sport ?? 'Sport'} · {centriMap.get(p.centro_id)?.nome ?? 'Centro'}</Muted>
+                                {propostaTesto && <Muted style={{ color: colors.gold, fontWeight: '700' }}>{propostaTesto}</Muted>}
+                              </View>
+                              <IconButton
+                                icon="close"
+                                onPress={() => annullaAttesa(p)}
+                                disabled={annullandoAttesa === p.id}
+                              />
                             </View>
-                            <IconButton
-                              icon="close"
-                              onPress={() => annullaAttesa(p)}
-                              disabled={annullandoAttesa === p.id}
-                            />
-                          </View>
-                        </Card>
-                      </View>
-                    ))}
+                          </Card>
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
               </>
@@ -1002,19 +1091,28 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.sm, marginTop: Spacing.sm },
     sectionTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
     rigaTitolo: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
+    sfidaAzione: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.pill },
+    sfidaRifiuta: { borderWidth: 1, borderColor: colors.red + '55' },
+    sfidaAzioneTesto: { fontWeight: '800', fontSize: Font.small },
     scheda: {},
     schedaHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
     schedaTitolo: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '800' },
-    schedaFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.md },
+    // Centrato (fix utente esplicito: "vorrei che gli elementi dentro alle
+    // schede fossero formattati centralmente, ora sono tutti verso SX") —
+    // sia i badge di stato/risultato sia le colonne squadre sotto.
+    schedaFooter: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.md },
     badge: { paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.pill },
     badgeTesto: { fontWeight: '800', fontSize: Font.tiny },
 
     // Squadre in miniatura (riga impegno) — avatar squircle + nome, stesso
     // linguaggio delle coppie A/B di "Invita giocatori" ma condensato.
+    // Centrato (fix utente esplicito, vedi sopra): sia la label "La tua
+    // squadra"/"Avversari" sia la riga di avatar sotto, non più impacchettate
+    // a sinistra dentro la loro colonna.
     squadreMini: { flexDirection: 'row', gap: Spacing.lg, marginTop: Spacing.md },
-    squadraMiniCol: { flex: 1 },
-    squadraMiniLabel: { fontSize: Font.tiny, marginBottom: 6 },
-    squadraMiniAvatars: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    squadraMiniCol: { flex: 1, alignItems: 'center' },
+    squadraMiniLabel: { fontSize: Font.tiny, marginBottom: 6, textAlign: 'center' },
+    squadraMiniAvatars: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.sm },
     miniGiocatore: { alignItems: 'center', width: 44 },
     miniNome: { fontSize: 9, marginTop: 2, textAlign: 'center', color: colors.slate },
 

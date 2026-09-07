@@ -46,7 +46,26 @@ export function Card({ children, style, variant = 'regular' }: {
   const border = variant === 'clear' ? glass.clearBorder : glass.regularBorder;
   return (
     <View style={[{ borderRadius: Radius.card, boxShadow: glass.shadow } as any, style]}>
-      <View style={{ borderRadius: Radius.card, overflow: 'hidden', borderWidth: 1, borderColor: border }}>
+      {/* flex:1 + alignSelf:'stretch' qui (bug reale trovato dall'utente più
+          volte, "box dentro box"): questo nodo è l'UNICO figlio di quello
+          sopra, quindi normalmente riempirebbe da solo tutto lo spazio del
+          genitore — TRANNE quando `style` passato a <Card> imposta un
+          `alignItems` o un `flexDirection` (es. ogni card-riga icona+testo+
+          prezzo, o una card a colonna centrata come le box statistiche):
+          quel valore FINISCE ANCHE sul nodo esterno (serve perché
+          CONTENT_LAYOUT_KEYS lo applichi anche al contenuto vero, sotto),
+          e un `alignItems` diverso da 'stretch' lì sopra fa sì che questo
+          figlio si restringa al proprio contenuto sull'asse trasversale
+          invece di riempirlo — lasciando il riquadro vero (bordo/sfondo/
+          blur) più piccolo del box che porta l'ombra, con l'ombra visibile
+          oltre il bordo come se ci fosse "un'altra card" dietro. flex:1
+          copre l'asse principale (es. flexDirection:'row' → larghezza),
+          alignSelf:'stretch' copre SEMPRE l'asse trasversale qualunque sia
+          l'alignItems del genitore (es. flexDirection di default/'column'
+          con alignItems:'center' → larghezza, il caso delle box
+          statistiche centrate) — servono entrambi, uno non basta senza
+          l'altro. */}
+      <View style={{ flex: 1, alignSelf: 'stretch', borderRadius: Radius.card, overflow: 'hidden', borderWidth: 1, borderColor: border }}>
         {/* Il vetro reagisce al contenuto sottostante (§2 direttiva): tint
             chiaro su superficie chiara, scuro su superficie scura. */}
         <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />

@@ -15,7 +15,7 @@ import type {
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
-  NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa,
+  NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -125,6 +125,18 @@ export async function getGiocatori(): Promise<Giocatore[]> {
   if (isMock()) return mock.mockGiocatori;
   const { data } = await apiGet<any[]>('/giocatori');
   return (data ?? []).map(mapGiocatore);
+}
+
+/** UN giocatore per id — a differenza di getRanking (usata prima per
+ *  risolvere anche l'anagrafica del profilo pubblico), non richiede che
+ *  abbia già un ranking per lo sport attivo: un giocatore mai valutato non
+ *  deve sparire dal proprio profilo pubblico (fix bug reale: nome/cognome/
+ *  posizione/mano restavano tutti vuoti per chiunque non avesse ancora un
+ *  ranking Padel). */
+export async function getGiocatore(id: string): Promise<Giocatore | null> {
+  if (isMock()) return mock.mockGiocatori.find((g) => g.id === id) ?? null;
+  const { data } = await apiGet<any>(`/giocatori/${id}`);
+  return data ? mapGiocatore(data) : null;
 }
 
 // ---------- Campi ----------
@@ -276,6 +288,51 @@ export async function getMiePrenotazioniInAttesa(giocatoreId: string): Promise<P
   if (isMock()) return [];
   const { data } = await apiGet<Prenotazione[]>('/prenotazioni', { stato: 'attesa' });
   return (data ?? []).filter((p) => p.giocatori_extra?.includes(giocatoreId));
+}
+
+// ---------- Sfida diretta tra due giocatori (fix utente esplicito: "deve
+// esserci un tasto sfida" nel profilo pubblico) ----------
+
+/** Lancia una sfida — crea subito una prenotazione "attesa" con solo il
+ *  mittente dentro (vedi POST /prenotazioni/sfida sul backend). */
+export async function creaSfida(input: {
+  mittenteId: string; destinatarioId: string; centroId: string; sport: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.mittenteId)) return { ok: true };
+  const { error } = await apiPost('/prenotazioni/sfida', {
+    mittente_id: input.mittenteId, destinatario_id: input.destinatarioId, centro_id: input.centroId, sport: input.sport,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Sfide ricevute e ancora da accettare/rifiutare — stesso idioma di
+ *  getMiePrenotazioniInAttesa: il generico filtra solo per uguaglianza su
+ *  colonne semplici, il contenuto di `sfida` (JSON) si controlla lato
+ *  client. */
+export async function getSfideRicevute(giocatoreId: string): Promise<Prenotazione[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<Prenotazione[]>('/prenotazioni', { stato: 'attesa' });
+  return (data ?? []).filter((p) => p.sfida?.a === giocatoreId && p.sfida?.stato === 'in_attesa');
+}
+
+/** Accetta una sfida ricevuta — il backend aggiunge lo sfidato a
+ *  giocatori_extra e calcola una proposta di giorno/ora dalla sovrapposizione
+ *  delle disponibilità orarie di entrambi (fix utente esplicito: "viene
+ *  fatta una proposta automatica... in base agli orari ed i giorni
+ *  inseriti, se ci sono"). `propostaTrovata: false` quando a uno dei due
+ *  mancano gli orari (o non si sovrappongono): il chiamante deve invitare
+ *  il giocatore a impostare i suoi in Modifica profilo. */
+export async function accettaSfida(prenotazioneId: string): Promise<{ ok: boolean; propostaTrovata?: boolean; error?: string }> {
+  const { data, error } = await apiPost<{ prenotazione: Prenotazione; proposta_trovata: boolean }>(`/prenotazioni/${prenotazioneId}/sfida/accetta`);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, propostaTrovata: data?.proposta_trovata };
+}
+
+/** Rifiuta una sfida ricevuta (o la annulla, se il mittente cambia idea) —
+ *  la riga viene eliminata, nessuno stato "rifiutata" da conservare. */
+export async function rifiutaSfida(prenotazioneId: string): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await apiPost(`/prenotazioni/${prenotazioneId}/sfida/rifiuta`);
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 // ---------- Noleggio (attrezzatura) ----------
@@ -1116,6 +1173,17 @@ export async function getStarsCoinPerCentro(giocatoreId: string): Promise<{ cent
   return (saldi ?? [])
     .filter((s) => s.saldo > 0 && centriMap.has(s.centro_id))
     .map((s) => ({ centro: centriMap.get(s.centro_id)!, saldo: s.saldo }));
+}
+
+/** Totale Star Coin spesi da sempre (somma di tutti gli addebiti, in ogni
+ *  centro) — sia acquisti Shop/Abbonamenti sia pagamenti campo in coin,
+ *  tutti registrati come CoinTransazione con importo negativo dallo stesso
+ *  applica_movimento_coin lato backend (fix utente esplicito: "il secondo
+ *  box deve visualizzare quanti Stars Coin sono stati spesi da sempre"). */
+export async function getTotaleCoinSpeso(giocatoreId: string): Promise<number> {
+  if (isMock()) return 0;
+  const { data } = await apiGet<CoinTransazione[]>('/coin-transazioni', { giocatore_id: giocatoreId });
+  return (data ?? []).filter((t) => t.importo < 0).reduce((acc, t) => acc - t.importo, 0);
 }
 
 // ---------- Shop ----------
