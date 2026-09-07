@@ -138,7 +138,6 @@ export function HomeCarousel() {
   const [variazione, setVariazione] = useState<VariazioneRanking | null>(null);
   const [andamento, setAndamento] = useState<AndamentoRecente>(ANDAMENTO_VUOTO);
   const [prossimaPartita, setProssimaPartita] = useState<ProssimaPartita | null>(null);
-  const [insights, setInsights] = useState<InsightsSociali>(INSIGHTS_VUOTI);
   const [esiti, setEsiti] = useState<[EsitoWidget | null, EsitoWidget | null]>([null, null]);
   const [eventiADV, setEventiADV] = useState<EventoCustom[]>([]);
   const [prodottiADV, setProdottiADV] = useState<ShopProdotto[]>([]);
@@ -165,10 +164,12 @@ export function HomeCarousel() {
     // resta affidabile anche se questa (più pesante, ricostruita su tutta
     // la popolazione) impiega qualche istante in più o fallisce.
     getVariazioneRankingGlobale(me.id, sportAttivo, 30).then(setVariazione);
-    // Slide 2 e 3 (fix utente esplicito: "vita sportiva recente" + "insight
-    // personali e divertenti") — derivate dalle partite reali, mai finte.
+    // Slide 2 (fix utente esplicito: "vita sportiva recente") — derivata
+    // dalle partite reali, mai finta. La 3° slide "insight social"
+    // (Compagno/Nemesi/Preferito) è stata rimossa da qui (fix utente
+    // esplicito: "deve essere SOLO nel profilo giocatore, come è già") —
+    // vive solo in SocialInsightsCard, montata in profilo.tsx.
     getAndamentoRecente(me.id, sportAttivo, 10).then(setAndamento);
-    getInsightsSociali(me.id, sportAttivo).then(setInsights);
     // Frase contestuale della slide 2 (fix utente esplicito: "se ha una
     // serie positiva ed ha una partita a breve deve dire qualcosa a
     // riguardo") — combinata con andamento/streak in generaFraseAndamento.
@@ -195,7 +196,6 @@ export function HomeCarousel() {
 
   const apriEvento = () => router.push('/(tabs)/eventi');
   const apriShop = () => router.push('/(tabs)/stars-coin');
-  const apriGiocatore = (giocatoreId: string) => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: giocatoreId } });
   // Tap su UN prodotto/abbonamento specifico dentro la scheda ADV multipla
   // deve portare dritto a quello, non solo all'apertura del centro (fix
   // utente esplicito) — vedi il deep-link letto da app/(tabs)/stars-coin.tsx.
@@ -213,17 +213,20 @@ export function HomeCarousel() {
   // ============================================================
   // Motore del carosello: autoplay + swipe manuale + loop infinito senza
   // salti visivi + pausa al tocco + rispetto di prefers-reduced-motion (fix
-  // utente esplicito, vedi tutta questa sezione). Le 3 slide personali
-  // (ranking, andamento recente, insight social) sono SEMPRE presenti e
-  // sempre per prime; dopo vengono le ADV del centro. Le pagine "reali" i
-  // vanno da 0 a n-1: per il loop, la ScrollView renderizza [ultima,
-  // ...reali, prima] (n+2 pagine) e la posizione iniziale è l'indice
-  // esteso 1 (= reale 0). Quando l'utente/l'autoplay arriva su un clone
-  // (estremo 0 o n+1), non appena lo scroll si ferma si salta SENZA
-  // animazione alla pagina reale identica — il clone è pixel-identico
-  // all'originale, quindi il salto non si vede (tecnica standard per i
-  // caroselli infiniti, l'unico modo per non avere un salto quando si
-  // torna dall'ultima alla prima senza mai "vedere" i bordi dell'array).
+  // utente esplicito, vedi tutta questa sezione). Le 2 slide personali
+  // (ranking, andamento recente) sono SEMPRE presenti e sempre per prime;
+  // dopo vengono le ADV del centro. La 3° slide "insight social" non c'è
+  // più qui (fix utente esplicito: "deve essere SOLO nel profilo
+  // giocatore, come è già") — vive solo in SocialInsightsCard (vedi sotto),
+  // montata in profilo.tsx. Le pagine "reali" vanno da 0 a n-1: per il
+  // loop, la ScrollView renderizza [ultima, ...reali, prima] (n+2 pagine) e
+  // la posizione iniziale è l'indice esteso 1 (= reale 0). Quando
+  // l'utente/l'autoplay arriva su un clone (estremo 0 o n+1), non appena lo
+  // scroll si ferma si salta SENZA animazione alla pagina reale identica —
+  // il clone è pixel-identico all'originale, quindi il salto non si vede
+  // (tecnica standard per i caroselli infiniti, l'unico modo per non avere
+  // un salto quando si torna dall'ultima alla prima senza mai "vedere" i
+  // bordi dell'array).
   // ============================================================
   const slide: { key: string; node: React.ReactNode }[] = [
     { key: 'ranking', node: (
@@ -231,7 +234,6 @@ export function HomeCarousel() {
         onConfiguraSlot={setSlotConfigurando} colors={colors} s={s} />
     ) },
     { key: 'andamento', node: <AndamentoSlide andamento={andamento} prossimaPartita={prossimaPartita} colors={colors} s={s} /> },
-    { key: 'social', node: <SocialSlide insights={insights} colors={colors} s={s} onApriGiocatore={apriGiocatore} /> },
     ...eventiADV.map((e) => ({
       key: `ev-${e.id}`,
       node: (
