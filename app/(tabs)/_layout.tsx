@@ -465,6 +465,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="richiedi-valutazione" options={{ href: null }} />
       <Tabs.Screen name="giocatore/[id]" options={{ href: null }} />
       <Tabs.Screen name="giorno/[data]" options={{ href: null }} />
+      <Tabs.Screen name="eventi/campionato/[id]" options={{ href: null }} />
+      <Tabs.Screen name="eventi/torneo/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

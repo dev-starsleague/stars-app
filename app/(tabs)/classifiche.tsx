@@ -21,11 +21,12 @@ import { useTheme } from '../../lib/theme';
 import { useSport } from '../../lib/sport';
 import { SPORT_SINGOLI, categoriaRanking, CATEGORIE_RANKING } from '../../lib/stars';
 import {
-  getCentri, getClassificaRanking, getClassifica, getClassificaCoppie, centriPreferiti,
+  getCentri, getClassificaRanking, getClassifica, getClassificaCoppie, centriPreferiti, creaSfida,
 } from '../../lib/api';
 import type { FiltroClassificaRanking } from '../../lib/api';
+import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
-import { Card, IconButton, Input, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
+import { Card, IconButton, Input, Muted, Segmented, immagineProfiloDefault, Avatar, AvatarCoppia, Button } from '../../components/ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../../constants/theme';
 import type { Centro, Genere, RankingGiocatore, Giocatore, ClassificaMensile, RigaClassificaCoppia } from '../../types/models';
 
@@ -393,6 +394,12 @@ function SezioneCoppie({ sportAttivo, centri, colors, s }: {
   const [ricercaAperta, setRicercaAperta] = useState(false);
   const [ricerca, setRicerca] = useState('');
   const [categoriaCoppia, setCategoriaCoppia] = useState<CategoriaCoppia>('M');
+  // Profilo minimale di coppia (fix utente esplicito: "se viene cliccato
+  // il nome o l'immagine devono aprirsi le statistiche di coppia") —
+  // aperto da qualunque riga (podio o lista), niente fetch aggiuntivo: la
+  // riga della classifica ha già tutto (avatar, nome, cognome, nickname,
+  // partite/vittorie/winrate).
+  const [coppiaSelezionata, setCoppiaSelezionata] = useState<RigaClassificaCoppia | null>(null);
 
   const preferiti = useMemo(() => centriPreferiti(me), [me]);
   const centriFiltrati = centri
@@ -423,6 +430,8 @@ function SezioneCoppie({ sportAttivo, centri, colors, s }: {
     titolo: `${primoNome(r.nome1)} & ${primoNome(r.nome2)}`,
     sottotitolo: `${r.partiteInsieme} partite · ${r.winRatePercento}%`,
     valore: `${r.vittorie}`,
+    coppia: r,
+    onPress: () => setCoppiaSelezionata(r),
   }));
 
   return (
@@ -470,7 +479,106 @@ function SezioneCoppie({ sportAttivo, centri, colors, s }: {
         />
       )}
       <View style={{ height: 20 }} />
+      {coppiaSelezionata && centroId && (
+        <ModaleCoppia
+          coppia={coppiaSelezionata} centroId={centroId} sport={sportAttivo}
+          onChiudi={() => setCoppiaSelezionata(null)} colors={colors} s={s}
+        />
+      )}
     </ScrollView>
+  );
+}
+
+// ============================================================
+// Profilo minimale di coppia (fix utente esplicito): entrambi i
+// giocatori — avatar, nome, cognome, nickname — più le statistiche di
+// coppia (partite insieme, vittorie, winrate) e il tasto "Sfida", che
+// sfida ENTRAMBI i giocatori della coppia insieme (riusa la sfida
+// individuale già esistente — creaSfida — inviata a testa: chi guarda
+// deve accettarle entrambe per completare la squadra avversaria, non
+// serve un nuovo protocollo lato backend per una sfida "a coppia").
+function ModaleCoppia({ coppia, centroId, sport, onChiudi, colors, s }: {
+  coppia: RigaClassificaCoppia; centroId: string; sport: string; onChiudi: () => void;
+  colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  const { me, demoMode } = useAuth();
+  const { glass, scheme } = useTheme();
+  const [inviandoSfida, setInviandoSfida] = useState(false);
+  const eLaMiaCoppia = me && (me.id === coppia.giocatore1Id || me.id === coppia.giocatore2Id);
+
+  const sfidaCoppia = async () => {
+    if (!me) return;
+    setInviandoSfida(true);
+    const [r1, r2] = await Promise.all([
+      creaSfida({ mittenteId: me.id, destinatarioId: coppia.giocatore1Id, centroId, sport }),
+      creaSfida({ mittenteId: me.id, destinatarioId: coppia.giocatore2Id, centroId, sport }),
+    ]);
+    setInviandoSfida(false);
+    if (r1.ok && r2.ok) {
+      avvisa('Sfida inviata!', `${primoNome(coppia.nome1)} e ${primoNome(coppia.nome2)} riceveranno la tua sfida a ${sport} e potranno accettarla dai loro Impegni.${demoMode ? '\n\n(demo)' : ''}`);
+      onChiudi();
+    } else {
+      avvisa('Non è stato possibile inviare la sfida', r1.error ?? r2.error);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onChiudi}>
+      <Pressable style={s.modaleSfondo} onPress={onChiudi}>
+        <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
+
+          <View style={s.coppiaHead}>
+            <AvatarCoppia
+              nome1={coppia.nome1} nome2={coppia.nome2} genere1={coppia.genere1} genere2={coppia.genere2}
+              avatar1={coppia.avatar1} avatar2={coppia.avatar2} size={56}
+            />
+            <Text style={s.coppiaTitolo}>{primoNome(coppia.nome1)} & {primoNome(coppia.nome2)}</Text>
+          </View>
+
+          {/* Profilo minimale di ENTRAMBI: avatar proprio, nome+cognome,
+              nickname — non l'avatar a metà (quello è solo per riconoscere
+              la coppia a colpo d'occhio nella lista/podio). */}
+          <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
+            {[
+              { nome: coppia.nome1, cognome: coppia.cognome1, genere: coppia.genere1, avatar: coppia.avatar1, nickname: coppia.nickname1 },
+              { nome: coppia.nome2, cognome: coppia.cognome2, genere: coppia.genere2, avatar: coppia.avatar2, nickname: coppia.nickname2 },
+            ].map((g, i) => (
+              <View key={i} style={s.giocatoreRiga}>
+                <Avatar name={g.nome} size={40} uri={g.avatar} genere={g.genere} squircle />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.giocatoreNome} numberOfLines={1}>{g.nome}</Text>
+                  <Text style={s.giocatoreNick} numberOfLines={1}>{g.nickname ? `"${g.nickname}"` : 'Nessun nickname'}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <View style={s.coppiaStats}>
+            <View style={s.coppiaStat}>
+              <Text style={s.coppiaStatValue}>{coppia.partiteInsieme}</Text>
+              <Muted>Partite insieme</Muted>
+            </View>
+            <View style={s.coppiaStat}>
+              <Text style={s.coppiaStatValue}>{coppia.vittorie}</Text>
+              <Muted>Vittorie</Muted>
+            </View>
+            <View style={s.coppiaStat}>
+              <Text style={[s.coppiaStatValue, { color: colors.gold }]}>{coppia.winRatePercento}%</Text>
+              <Muted>Win rate</Muted>
+            </View>
+          </View>
+
+          {!eLaMiaCoppia && (
+            <Pressable style={s.sfidaBtnCoppia} onPress={sfidaCoppia} disabled={inviandoSfida}>
+              <Ionicons name="flash" size={18} color={colors.navyDeep} />
+              <Text style={s.sfidaBtnCoppiaText}>{inviandoSfida ? 'Invio…' : 'Sfida'}</Text>
+            </Pressable>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -478,7 +586,12 @@ function SezioneCoppie({ sportAttivo, centri, colors, s }: {
 // Componenti condivisi: podio (1°/2°/3°) + lista, usati da tutte e 3 le
 // sezioni con dati diversi ma stesso linguaggio grafico.
 // ============================================================
-interface RigaGenerica { key: string; iniziali: string; genere?: Genere | null; titolo: string; sottotitolo: string; valore: string; onPress?: () => void }
+interface RigaGenerica {
+  key: string; iniziali: string; genere?: Genere | null; titolo: string; sottotitolo: string; valore: string; onPress?: () => void;
+  // presente SOLO per le righe del RanDuo — l'avatar "a metà" (fix utente
+  // esplicito) sostituisce le iniziali/l'illustrazione singola quando c'è.
+  coppia?: RigaClassificaCoppia;
+}
 
 function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
   righe: RigaGenerica[]; coloreValore: string; unitaValore: string; vuoto: string;
@@ -501,7 +614,9 @@ function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
         {resto.map((r, i) => (
           <Pressable key={r.key} onPress={r.onPress} disabled={!r.onPress} style={s.listaRiga}>
             <Text style={s.listaPos}>{i + 4}</Text>
-            <SquircleAvatar testo={r.iniziali} genere={r.genere} size={40} bg={colors.navyCard} colore={colors.navyDeep} mostraSfondo={false} />
+            {r.coppia
+              ? <AvatarCoppia nome1={r.coppia.nome1} nome2={r.coppia.nome2} genere1={r.coppia.genere1} genere2={r.coppia.genere2} avatar1={r.coppia.avatar1} avatar2={r.coppia.avatar2} size={40} />
+              : <SquircleAvatar testo={r.iniziali} genere={r.genere} size={40} bg={colors.navyCard} colore={colors.navyDeep} mostraSfondo={false} />}
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={s.listaNome} numberOfLines={1}>{r.titolo}</Text>
               <Text style={s.listaSottotitolo} numberOfLines={1}>{r.sottotitolo}</Text>
@@ -528,7 +643,9 @@ function PodioCol({ riga, posizione, colore, coloreValore, unitaValore, colors, 
   return (
     <Pressable onPress={riga.onPress} disabled={!riga.onPress} style={s.podioCol}>
       <Text style={s.podioMedaglia}>{MEDAGLIE[posizione]}</Text>
-      <SquircleAvatar testo={riga.iniziali} genere={riga.genere} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />
+      {riga.coppia
+        ? <AvatarCoppia nome1={riga.coppia.nome1} nome2={riga.coppia.nome2} genere1={riga.coppia.genere1} genere2={riga.coppia.genere2} avatar1={riga.coppia.avatar1} avatar2={riga.coppia.avatar2} size={posizione === 1 ? 68 : 56} />
+        : <SquircleAvatar testo={riga.iniziali} genere={riga.genere} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />}
       <Text style={s.podioNome} numberOfLines={1}>{riga.titolo}</Text>
       <Text style={[s.podioValore, { color: coloreValore }]} numberOfLines={1}>{riga.valore}{unitaValore}</Text>
       <Text style={s.podioSub} numberOfLines={1}>{riga.sottotitolo}</Text>
@@ -636,5 +753,23 @@ function makeStyles(colors: AppColors) {
     btnGhostText: { color: colors.slateLight, fontWeight: '700' },
     btnPieno: { flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.control, alignItems: 'center', backgroundColor: colors.gold },
     btnPienoText: { color: colors.navyDeep, fontWeight: '800' },
+
+    // Profilo minimale di coppia (fix utente esplicito).
+    coppiaHead: { alignItems: 'center', gap: Spacing.sm },
+    coppiaTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, textAlign: 'center' },
+    giocatoreRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    giocatoreNome: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
+    giocatoreNick: { color: colors.slate, fontStyle: 'italic', fontSize: Font.small },
+    coppiaStats: {
+      flexDirection: 'row', marginTop: Spacing.lg, paddingTop: Spacing.md,
+      borderTopWidth: 1, borderTopColor: colors.navyLine + '33',
+    },
+    coppiaStat: { flex: 1, alignItems: 'center', gap: 2 },
+    coppiaStatValue: { color: colors.navyDeep, fontWeight: '900', fontSize: Font.h3 },
+    sfidaBtnCoppia: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+      backgroundColor: colors.gold, borderRadius: Radius.pill, paddingVertical: Spacing.md, marginTop: Spacing.lg,
+    },
+    sfidaBtnCoppiaText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
   });
 }

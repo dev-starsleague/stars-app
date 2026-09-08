@@ -16,6 +16,8 @@ import type {
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
   NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione,
+  Campionato, Torneo, CampionatoPartecipante, TorneoPartecipante, CampionatoGirone, CampionatoGiornata, CampionatoMatch,
+  TorneoRound, TorneoMatch, RigaClassifica,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -549,7 +551,90 @@ export async function getPartiteGiocatore(giocatoreId: string): Promise<Prenotaz
   const mie = (rows ?? [])
     .filter((p) => p.giocatori_extra?.includes(giocatoreId))
     .map((p) => ({ ...p, campo: p.campo_id ? campoById.get(p.campo_id) : undefined }));
-  return sortBy(mie, (p) => p.data ?? '', { desc: true });
+
+  // Un match di campionato/torneo con un risultato registrato non ha
+  // SEMPRE una Prenotazione reale collegata — solo se qualcuno lo ha
+  // "Pianificato" sul Planner del gestionale prima o dopo aver giocato.
+  // Senza questo, quei match sparivano del tutto dallo storico del
+  // giocatore (fix utente esplicito: "negli eventi non sono neanche
+  // segnate tutte le partite") — qui li recuperiamo comunque.
+  const campionatoMatchGiaCollegati = new Set(mie.map((p) => p.campionato_match_id).filter((x): x is string => !!x));
+  const torneoMatchGiaCollegati = new Set(mie.map((p) => p.torneo_match_id).filter((x): x is string => !!x));
+  const extra = await partiteCampionatoTorneoSenzaPrenotazione(giocatoreId, campionatoMatchGiaCollegati, torneoMatchGiaCollegati);
+
+  return sortBy([...mie, ...extra], (p) => p.data ?? '', { desc: true });
+}
+
+/** Match di campionato/torneo giocati/forfait del giocatore che NON hanno
+ *  (ancora, o mai avranno) una Prenotazione reale collegata — ricostruiti
+ *  come Prenotazione "sintetiche" di sola lettura (id prefissato apposta,
+ *  mai passate a un endpoint di scrittura), stessa forma esatta
+ *  (squadre/risultato/giocatori_extra) di una prenotazione vera così
+ *  haVinto() e i filtri della schermata Profilo funzionano identici.
+ *  Vedi getPartiteGiocatore sopra per il perché. */
+async function partiteCampionatoTorneoSenzaPrenotazione(
+  giocatoreId: string,
+  campionatoMatchGiaCollegati: Set<string>,
+  torneoMatchGiaCollegati: Set<string>
+): Promise<Prenotazione[]> {
+  const [{ data: c1 }, { data: c2 }, { data: t1 }, { data: t2 }] = await Promise.all([
+    apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { giocatore_2_id: giocatoreId }),
+    apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { giocatore_2_id: giocatoreId }),
+  ]);
+  const miePartCamp = [...(c1 ?? []), ...(c2 ?? [])];
+  const miePartTorn = [...(t1 ?? []), ...(t2 ?? [])];
+  if (miePartCamp.length === 0 && miePartTorn.length === 0) return [];
+
+  const miePartCampIds = new Set(miePartCamp.map((p) => p.id));
+  const miePartTornIds = new Set(miePartTorn.map((p) => p.id));
+  const campIds = [...new Set(miePartCamp.map((p) => p.campionato_id))];
+  const tornIds = [...new Set(miePartTorn.map((p) => p.torneo_id))];
+
+  const [matchCampRes, matchTornRes, partCampRes, partTornRes] = await Promise.all([
+    Promise.all(campIds.map((cid) => apiGet<CampionatoMatch[]>('/campionati-match', { campionato_id: cid }))),
+    Promise.all(tornIds.map((tid) => apiGet<TorneoMatch[]>('/tornei-match', { torneo_id: tid }))),
+    Promise.all(campIds.map((cid) => apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { campionato_id: cid }))),
+    Promise.all(tornIds.map((tid) => apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: tid }))),
+  ]);
+  const matchCamp = matchCampRes.flatMap((r) => r.data ?? []);
+  const matchTorn = matchTornRes.flatMap((r) => r.data ?? []);
+  const partCampMap = new Map(partCampRes.flatMap((r) => r.data ?? []).map((p) => [p.id, p] as const));
+  const partTornMap = new Map(partTornRes.flatMap((r) => r.data ?? []).map((p) => [p.id, p] as const));
+
+  const sintetizza = (
+    m: CampionatoMatch | TorneoMatch,
+    partMap: Map<string, CampionatoPartecipante | TorneoPartecipante>
+  ): Prenotazione | null => {
+    const pa = m.partecipante_a_id ? partMap.get(m.partecipante_a_id) : undefined;
+    const pb = m.partecipante_b_id ? partMap.get(m.partecipante_b_id) : undefined;
+    if (!pa || !pb) return null;
+    const squadraA = pa.giocatore_2_id ? [pa.giocatore_1_id, pa.giocatore_2_id] : [pa.giocatore_1_id];
+    const squadraB = pb.giocatore_2_id ? [pb.giocatore_1_id, pb.giocatore_2_id] : [pb.giocatore_1_id];
+    const vincitore: 'A' | 'B' | null = m.vincitore_id === m.partecipante_a_id ? 'A' : m.vincitore_id === m.partecipante_b_id ? 'B' : null;
+    return {
+      id: `sintetica-${m.id}`, centro_id: '', campo_id: null, data: m.data ?? null, inizio: null, fine: null,
+      tipo: 'torneo', stato: 'completa', stato_pagamento: 'saldato', prezzo: 0,
+      giocatori_extra: [...squadraA, ...squadraB],
+      formato: squadraA.length > 1 || squadraB.length > 1 ? 'doppio' : 'singolo',
+      risultato: vincitore ? { sets: m.set_risultati ?? [], vincitore, set_a: m.set_a ?? undefined, set_b: m.set_b ?? undefined } : null,
+      squadre: { a: squadraA, b: squadraB },
+    };
+  };
+
+  const daCampionato = matchCamp
+    .filter((m) => !m.bye && (m.stato === 'giocato' || m.stato === 'forfait') && !campionatoMatchGiaCollegati.has(m.id)
+      && ((m.partecipante_a_id && miePartCampIds.has(m.partecipante_a_id)) || (m.partecipante_b_id && miePartCampIds.has(m.partecipante_b_id))))
+    .map((m) => sintetizza(m, partCampMap))
+    .filter((p): p is Prenotazione => !!p);
+  const daTorneo = matchTorn
+    .filter((m) => !m.bye && (m.stato === 'giocato' || m.stato === 'forfait') && !torneoMatchGiaCollegati.has(m.id)
+      && ((m.partecipante_a_id && miePartTornIds.has(m.partecipante_a_id)) || (m.partecipante_b_id && miePartTornIds.has(m.partecipante_b_id))))
+    .map((m) => sintetizza(m, partTornMap))
+    .filter((p): p is Prenotazione => !!p);
+
+  return [...daCampionato, ...daTorneo];
 }
 
 /** true se il giocatore ha vinto questa prenotazione — usa `squadre` se
@@ -760,6 +845,7 @@ export async function getClassificaCoppie(centroId: string, sport: string): Prom
   ]);
   const nomeById = new Map(giocatori.map((g) => [g.id, `${g.nome} ${g.cognome}`]));
   const genereById = new Map(giocatori.map((g) => [g.id, g.genere]));
+  const giocatoreById = new Map(giocatori.map((g) => [g.id, g]));
   const campoById = new Map((campi ?? []).map((c) => [c.id, c]));
   const rilevanti = (prenotazioni ?? []).filter((p) =>
     p.tipo !== 'lezione' && p.risultato?.vincitore && p.giocatori_extra?.length === 4
@@ -788,10 +874,15 @@ export async function getClassificaCoppie(centroId: string, sport: string): Prom
   for (const [chiave, agg] of coppie) {
     if (agg.partite < MIN_PARTITE_COPPIA) continue;
     const [id1, id2] = chiave.split('_');
+    const g1 = giocatoreById.get(id1), g2 = giocatoreById.get(id2);
     righe.push({
       giocatore1Id: id1, giocatore2Id: id2,
       nome1: nomeById.get(id1) ?? 'Giocatore', nome2: nomeById.get(id2) ?? 'Giocatore',
+      cognome1: g1?.cognome ?? '', cognome2: g2?.cognome ?? '',
       genere1: genereById.get(id1) ?? null, genere2: genereById.get(id2) ?? null,
+      avatar1: g1?.avatar_url ?? g1?.profilo?.avatar_url ?? null,
+      avatar2: g2?.avatar_url ?? g2?.profilo?.avatar_url ?? null,
+      nickname1: g1?.profilo?.nickname ?? null, nickname2: g2?.profilo?.nickname ?? null,
       partiteInsieme: agg.partite, vittorie: agg.vittorie, sconfitte: agg.sconfitte,
       winRatePercento: Math.round((agg.vittorie / agg.partite) * 100),
     });
@@ -1102,6 +1193,207 @@ export async function iscrivitiEvento(eventoId: string, giocatoreId: string): Pr
     evento_id: eventoId, giocatore_1_id: giocatoreId, ranking_coppia: 0, stato: 'iscritto',
   });
   return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Campionati / Tornei ----------
+// Stesso motore del gestionale (vedi stars-system/backend/app/routers/
+// campionato.py, torneo.py), stesso backend condiviso, nessun endpoint
+// dedicato — i CampionatoPartecipante/TorneoPartecipante hanno
+// giocatore_2_id nullable (a differenza di EventoPartecipante, che lo
+// richiede sempre): un giocatore può iscriversi anche da solo, in attesa
+// di un compagno, quando il formato prevede la coppia (fix esplicito:
+// "permetti ai giocatori di iscriversi in autonomia").
+const STATI_ATTIVI_CAMPIONATO_TORNEO = ['iscrizioni_aperte', 'iscrizioni_chiuse', 'in_corso'];
+
+export async function getCampionati(): Promise<Campionato[]> {
+  if (isMock()) return [];
+  const [{ data: camp }, { data: part }] = await Promise.all([
+    apiGet<Campionato[]>('/campionati'),
+    apiGet<any[]>('/campionati-partecipanti'),
+  ]);
+  const conteggi = new Map<string, number>();
+  for (const p of part ?? []) if (p.stato === 'iscritto') conteggi.set(p.campionato_id, (conteggi.get(p.campionato_id) ?? 0) + 1);
+  const filtrati = (camp ?? [])
+    .filter((c) => STATI_ATTIVI_CAMPIONATO_TORNEO.includes(c.stato) || c.stato === 'concluso')
+    .map((c) => ({ ...c, iscritti_count: conteggi.get(c.id) ?? 0 }));
+  return sortBy(filtrati, (c) => c.inizio_evento_at ?? '');
+}
+
+export async function getCampionatiIscritti(giocatoreId: string): Promise<Campionato[]> {
+  if (isMock()) return [];
+  const [{ data: p1 }, { data: p2 }, { data: camp }] = await Promise.all([
+    apiGet<any[]>('/campionati-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<any[]>('/campionati-partecipanti', { giocatore_2_id: giocatoreId }),
+    apiGet<Campionato[]>('/campionati'),
+  ]);
+  const ids = new Set([...(p1 ?? []), ...(p2 ?? [])].filter((p) => p.stato === 'iscritto').map((p) => p.campionato_id));
+  return (camp ?? []).filter((c) => ids.has(c.id));
+}
+
+/** `partnerId` opzionale: se il formato è a coppie ma il giocatore non ha
+ *  ancora un compagno, si iscrive comunque da solo (giocatore_2_id null),
+ *  il gestionale mostrerà la coppia incompleta come qualunque iscrizione
+ *  manuale. Il ranking congelato è quello vero del giocatore (media dei
+ *  due se in coppia), non più un placeholder a 0 come per gli eventi
+ *  custom — qui esiste già getRankingAttuale per leggerlo. */
+export async function iscrivitiCampionato(campionatoId: string, giocatoreId: string, sport: string, partnerId?: string | null): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
+  const [r1, r2] = await Promise.all([
+    getRankingAttuale(giocatoreId, sport),
+    partnerId ? getRankingAttuale(partnerId, sport) : Promise.resolve(null),
+  ]);
+  const ranking = partnerId ? ((r1?.ranking ?? 0) + (r2?.ranking ?? 0)) / 2 : (r1?.ranking ?? 0);
+  const { error } = await apiPost('/campionati-partecipanti', {
+    campionato_id: campionatoId, giocatore_1_id: giocatoreId, giocatore_2_id: partnerId ?? null, ranking, stato: 'iscritto',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function getTornei(): Promise<Torneo[]> {
+  if (isMock()) return [];
+  const [{ data: torn }, { data: part }] = await Promise.all([
+    apiGet<Torneo[]>('/tornei'),
+    apiGet<any[]>('/tornei-partecipanti'),
+  ]);
+  const conteggi = new Map<string, number>();
+  for (const p of part ?? []) if (p.stato === 'iscritto') conteggi.set(p.torneo_id, (conteggi.get(p.torneo_id) ?? 0) + 1);
+  const filtrati = (torn ?? [])
+    .filter((t) => STATI_ATTIVI_CAMPIONATO_TORNEO.includes(t.stato) || t.stato === 'concluso')
+    .map((t) => ({ ...t, iscritti_count: conteggi.get(t.id) ?? 0 }));
+  return sortBy(filtrati, (t) => t.inizio_at ?? '');
+}
+
+export async function getTorneiIscritti(giocatoreId: string): Promise<Torneo[]> {
+  if (isMock()) return [];
+  const [{ data: p1 }, { data: p2 }, { data: torn }] = await Promise.all([
+    apiGet<any[]>('/tornei-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<any[]>('/tornei-partecipanti', { giocatore_2_id: giocatoreId }),
+    apiGet<Torneo[]>('/tornei'),
+  ]);
+  const ids = new Set([...(p1 ?? []), ...(p2 ?? [])].filter((p) => p.stato === 'iscritto').map((p) => p.torneo_id));
+  return (torn ?? []).filter((t) => ids.has(t.id));
+}
+
+export async function iscrivitiTorneo(torneoId: string, giocatoreId: string, sport: string, partnerId?: string | null): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
+  const [r1, r2] = await Promise.all([
+    getRankingAttuale(giocatoreId, sport),
+    partnerId ? getRankingAttuale(partnerId, sport) : Promise.resolve(null),
+  ]);
+  const ranking = partnerId ? ((r1?.ranking ?? 0) + (r2?.ranking ?? 0)) / 2 : (r1?.ranking ?? 0);
+  const { error } = await apiPost('/tornei-partecipanti', {
+    torneo_id: torneoId, giocatore_1_id: giocatoreId, giocatore_2_id: partnerId ?? null, ranking, stato: 'iscritto',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Campionati / Tornei: dettaglio (classifica, giornate, tabellone) ----------
+// Sola lettura per il giocatore — stesse entità/endpoint del gestionale
+// (stars-system/backend/app/routers/campionato.py, torneo.py), niente di
+// nuovo lato backend.
+export interface DettaglioCampionato {
+  campionato: Campionato;
+  partecipanti: CampionatoPartecipante[];
+  gironi: CampionatoGirone[];
+  giornate: CampionatoGiornata[];
+  match: CampionatoMatch[];
+}
+
+export async function getCampionatoDettaglio(id: string): Promise<DettaglioCampionato | null> {
+  if (isMock()) return null;
+  const [{ data: campionato }, { data: partecipanti }, { data: gironi }, { data: giornate }, { data: match }] = await Promise.all([
+    apiGet<Campionato>(`/campionati/${id}`),
+    apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { campionato_id: id }),
+    apiGet<CampionatoGirone[]>('/campionati-gironi', { campionato_id: id }),
+    apiGet<CampionatoGiornata[]>('/campionati-giornate', { campionato_id: id }),
+    apiGet<CampionatoMatch[]>('/campionati-match', { campionato_id: id }),
+  ]);
+  if (!campionato) return null;
+  return {
+    campionato,
+    partecipanti: (partecipanti ?? []).filter((p) => p.stato === 'iscritto'),
+    gironi: gironi ?? [],
+    giornate: sortBy(giornate ?? [], (g) => g.numero),
+    match: sortBy(match ?? [], (m) => m.created_at),
+  };
+}
+
+export async function getClassificaGirone(campionatoId: string, gironeId: string): Promise<RigaClassifica[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<RigaClassifica[]>(`/campionati/${campionatoId}/classifica/${gironeId}`);
+  return data ?? [];
+}
+
+export interface DettaglioTorneo {
+  torneo: Torneo;
+  partecipanti: TorneoPartecipante[];
+  round: TorneoRound[];
+  match: TorneoMatch[];
+}
+
+export async function getTorneoDettaglio(id: string): Promise<DettaglioTorneo | null> {
+  if (isMock()) return null;
+  const [{ data: torneo }, { data: partecipanti }, { data: round }, { data: match }] = await Promise.all([
+    apiGet<Torneo>(`/tornei/${id}`),
+    apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: id }),
+    apiGet<TorneoRound[]>('/tornei-round', { torneo_id: id }),
+    apiGet<TorneoMatch[]>('/tornei-match', { torneo_id: id }),
+  ]);
+  if (!torneo) return null;
+  return {
+    torneo,
+    partecipanti: (partecipanti ?? []).filter((p) => p.stato === 'iscritto'),
+    round: sortBy(round ?? [], (r) => r.numero),
+    match: sortBy(match ?? [], (m) => m.created_at),
+  };
+}
+
+export async function getClassificaTorneo(torneoId: string): Promise<RigaClassifica[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<RigaClassifica[]>(`/tornei/${torneoId}/classifica`);
+  return data ?? [];
+}
+
+/** Posizione del giocatore nella classifica del SUO girone — usata nella
+ *  lista Eventi al posto della generica etichetta "In corso" (fix utente
+ *  esplicito: "tanto si sa già che sono quelli in corso"), solo per chi è
+ *  iscritto: null se non iscritto o se il campionato non ha ancora un
+ *  girone/classifica assegnati. */
+export async function getPosizioneCampionato(campionatoId: string, giocatoreId: string): Promise<number | null> {
+  if (isMock()) return null;
+  const [{ data: p1 }, { data: p2 }] = await Promise.all([
+    apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { campionato_id: campionatoId, giocatore_1_id: giocatoreId }),
+    apiGet<CampionatoPartecipante[]>('/campionati-partecipanti', { campionato_id: campionatoId, giocatore_2_id: giocatoreId }),
+  ]);
+  const mio = (p1 ?? [])[0] ?? (p2 ?? [])[0];
+  if (!mio || !mio.girone_id) return null;
+  const classifica = await getClassificaGirone(campionatoId, mio.girone_id);
+  const riga = classifica.find((r) => r.partecipante_id === mio.id);
+  // Una posizione calcolata su 0 partite giocate non è una classifica
+  // vera — è solo l'ordine di spareggio/ranking di partenza (fix utente
+  // esplicito: "non devo avere posizione in classifica se ancora non
+  // sono state giocate partite").
+  if (!riga || riga.partite === 0) return null;
+  return classifica.indexOf(riga) + 1;
+}
+
+/** Stessa idea per i tornei — round_robin e swiss hanno una classifica
+ *  reale (single_elimination: null, resta "In corso"). */
+export async function getPosizioneTorneo(torneoId: string, giocatoreId: string): Promise<number | null> {
+  if (isMock()) return null;
+  const { data: torneo } = await apiGet<Torneo>(`/tornei/${torneoId}`);
+  if (!torneo || (torneo.format_type !== 'round_robin' && torneo.format_type !== 'swiss')) return null;
+  const [{ data: p1 }, { data: p2 }] = await Promise.all([
+    apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: torneoId, giocatore_1_id: giocatoreId }),
+    apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: torneoId, giocatore_2_id: giocatoreId }),
+  ]);
+  const mio = (p1 ?? [])[0] ?? (p2 ?? [])[0];
+  if (!mio) return null;
+  const classifica = await getClassificaTorneo(torneoId);
+  const riga = classifica.find((r) => r.partecipante_id === mio.id);
+  // Stesso principio di getPosizioneCampionato: 0 partite giocate = nessuna posizione.
+  if (!riga || riga.partite === 0) return null;
+  return classifica.indexOf(riga) + 1;
 }
 
 // ---------- Amici ----------

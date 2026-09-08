@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -66,7 +66,13 @@ export default function Profilo() {
   const [filtroEsito, setFiltroEsito] = useState<Set<FiltroEsito>>(new Set());
   const [filtroTipo, setFiltroTipo] = useState<Set<FiltroTipo>>(new Set());
   const [meseNav, setMeseNav] = useState(() => new Date());
-  const cambiaMeseNav = (delta: number) => setMeseNav((d) => { const n = new Date(d); n.setMonth(n.getMonth() + delta); return n; });
+  // Una volta che il giocatore ha toccato le frecce, il mese scelto è
+  // suo: l'aggiustamento automatico sotto non deve più intromettersi.
+  const meseScelloManualmenteRef = useRef(false);
+  const cambiaMeseNav = (delta: number) => {
+    meseScelloManualmenteRef.current = true;
+    setMeseNav((d) => { const n = new Date(d); n.setMonth(n.getMonth() + delta); return n; });
+  };
 
   const load = useCallback(async () => {
     if (!me) return;
@@ -76,6 +82,28 @@ export default function Profilo() {
     setPartiteTutte(pr);
   }, [me]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // "Partite" partiva sempre sul mese solare corrente: se lo storico reale
+  // del giocatore non arriva fino a oggi (l'ultima partita giocata è di
+  // un mese fa, o più), la lista risultava vuota di default — sembrando
+  // che vittorie/sconfitte non venissero mostrate affatto (fix utente
+  // esplicito: "la lista delle partite deve farmi vedere sia le vittorie
+  // che le sconfitte, controlla perché secondo me non lo fa"). Se il mese
+  // corrente non ha partite di questo sport, salta al mese della partita
+  // più recente — partiteTutte arriva già ordinata per data decrescente
+  // (vedi getPartiteGiocatore), quindi la prima riga dello sport attivo è
+  // quella giusta.
+  useEffect(() => {
+    if (meseScelloManualmenteRef.current || partiteTutte.length === 0) return;
+    const diQuestoSport = partiteTutte.filter((p) => (p.campo?.sport ?? 'Padel') === sportAttivo);
+    if (diQuestoSport.length === 0) return;
+    const meseCorrenteIso = `${meseNav.getFullYear()}-${String(meseNav.getMonth() + 1).padStart(2, '0')}`;
+    const haQuestoMese = diQuestoSport.some((p) => (p.data ?? '').slice(0, 7) === meseCorrenteIso);
+    if (haQuestoMese) return;
+    const piuRecente = diQuestoSport[0];
+    if (piuRecente.data) setMeseNav(new Date(`${piuRecente.data}T12:00:00`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partiteTutte, sportAttivo]);
 
   // Sport globale dell'header (fix utente esplicito): ranking/storico/
   // partite di questa schermata seguono sportAttivo, non più una scelta
@@ -242,7 +270,6 @@ export default function Profilo() {
             <View style={[s.filtriRiga, { flexWrap: 'wrap' }]}>
               <Chip label="Vittorie" active={filtroEsito.has('vittorie')} onPress={() => setFiltroEsito((p) => toggleInSet(p, 'vittorie'))} />
               <Chip label="Sconfitte" active={filtroEsito.has('sconfitte')} onPress={() => setFiltroEsito((p) => toggleInSet(p, 'sconfitte'))} />
-              <Chip label="Normali" active={filtroTipo.has('normali')} onPress={() => setFiltroTipo((p) => toggleInSet(p, 'normali'))} />
               <Chip label="Eventi" active={filtroTipo.has('eventi')} onPress={() => setFiltroTipo((p) => toggleInSet(p, 'eventi'))} />
             </View>
 

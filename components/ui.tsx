@@ -323,6 +323,57 @@ export function Avatar({ name, size = 40, gold, uri, ringColor, squircle, genere
   );
 }
 
+// Avatar "a metà" di una coppia (fix utente esplicito: "l'immagine del
+// profilo deve essere l'immagine dei due giocatori a metà, metà uno e
+// metà l'altro") — usato per il RanDuo (classifica di coppia). Ogni metà
+// è ritagliata dalla stessa identica sorgente di Avatar (foto reale se
+// presente, altrimenti l'illustrazione di default per genere, altrimenti
+// l'iniziale): il contenitore di sinistra mostra la metà sinistra
+// dell'immagine intera del giocatore 1, quello di destra la metà destra
+// dell'immagine del giocatore 2 — non due miniature separate, un unico
+// ritratto "diviso a metà" come richiesto.
+function metaAvatarSource(uri?: string | null, genere?: string | null) {
+  if (uri) return { uri: uri.startsWith('http') ? uri : apiUrl(uri) };
+  return immagineProfiloDefault(genere);
+}
+export function AvatarCoppia({ nome1, nome2, genere1, genere2, avatar1, avatar2, size = 40, squircle = true }: {
+  nome1: string; nome2: string; genere1?: string | null; genere2?: string | null;
+  avatar1?: string | null; avatar2?: string | null; size?: number; squircle?: boolean;
+}) {
+  const { colors } = useTheme();
+  const img1 = metaAvatarSource(avatar1, genere1);
+  const img2 = metaAvatarSource(avatar2, genere2);
+  const iniziale1 = (nome1 || '?')[0]?.toUpperCase() ?? '?';
+  const iniziale2 = (nome2 || '?')[0]?.toUpperCase() ?? '?';
+  return (
+    <View style={{
+      width: size, height: size, flexDirection: 'row', overflow: 'hidden',
+      borderRadius: squircle ? size * 0.3 : size / 2,
+    }}>
+      {/* Ogni metà mostra la fascia CENTRALE della foto intera del
+          giocatore (non il suo bordo esterno): l'immagine è larga `size`
+          (stessa resa "cover" di un avatar normale, il volto resta
+          centrato al suo interno) e viene spostata a sinistra di size/4 —
+          così il centro dell'immagine intera coincide col centro della
+          metà da size/2 che la contiene, sia a sinistra che a destra (fix
+          utente esplicito: "il centro dell'immagine di ognuno deve essere
+          nel centro della metà dell'immagine complessiva"). Prima si
+          mostravano i bordi esterni (0..size/2 a sinistra, size/2..size a
+          destra), tagliando i volti fuori centro. */}
+      <View style={{ width: size / 2, height: size, backgroundColor: colors.navyLine, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {img1
+          ? <Image source={img1} style={{ width: size, height: size, marginLeft: -size / 4 }} resizeMode="cover" />
+          : <Text style={{ color: colors.white, fontWeight: '800', fontSize: size * 0.32 }}>{iniziale1}</Text>}
+      </View>
+      <View style={{ width: size / 2, height: size, backgroundColor: colors.navyLine, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {img2
+          ? <Image source={img2} style={{ width: size, height: size, marginLeft: -size / 4 }} resizeMode="cover" />
+          : <Text style={{ color: colors.white, fontWeight: '800', fontSize: size * 0.32 }}>{iniziale2}</Text>}
+      </View>
+    </View>
+  );
+}
+
 // Distintivo "partita in attesa di abbinamento" (fix utente esplicito:
 // "evidenziata con una stella nell'angolo alto dx") — da mettere come
 // sibling assoluto SOPRA una card, il cui genitore diretto deve avere

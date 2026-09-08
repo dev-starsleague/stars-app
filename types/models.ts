@@ -161,6 +161,14 @@ export interface Prenotazione {
   // squadra A/B esplicita (fallback: ordine posizionale in giocatori_extra,
   // a1/a2 poi b1/b2, per prenotazioni create prima che questo campo esistesse)
   squadre?: { a: string[]; b: string[] } | null;
+  // presenti solo se questa prenotazione è stata "Pianificata" dal
+  // gestionale per un match di campionato/torneo (vedi backend
+  // stars-system/backend/app/models/prenotazione.py) — usati per capire
+  // quali match di campionato/torneo hanno GIÀ una Prenotazione reale
+  // collegata, quando si ricostruiscono quelli che non l'hanno mai avuta
+  // (vedi lib/api.ts:getPartiteGiocatore).
+  campionato_match_id?: string | null;
+  torneo_match_id?: string | null;
   creata_da?: string | null;
   // quota per giocatore coinvolto: { [giocatore_id]: {importo, pagato} } —
   // stesso campo JSON del gestionale (backend/app/models/prenotazione.py),
@@ -412,8 +420,18 @@ export interface RigaClassificaCoppia {
   giocatore2Id: string;
   nome1: string;
   nome2: string;
+  cognome1: string;
+  cognome2: string;
   genere1: Genere | null;
   genere2: Genere | null;
+  // usati dall'avatar "a metà" della coppia e dal profilo minimale di
+  // coppia (fix utente esplicito) — null se il giocatore non ha ancora
+  // caricato una foto reale (si ricade sull'illustrazione di default per
+  // genere, come ovunque nell'app).
+  avatar1: string | null;
+  avatar2: string | null;
+  nickname1: string | null;
+  nickname2: string | null;
   partiteInsieme: number;
   vittorie: number;
   sconfitte: number;
@@ -464,6 +482,159 @@ export interface EventoPartecipante {
   ranking_coppia: number;
   seed: number | null;
   stato: 'iscritto' | 'ritirato';
+}
+
+// Campionati/Tornei: stesso motore del gestionale (stars-system/backend/
+// app/models/campionato.py, app/models/torneo.py), tabelle separate ma
+// stessa macchina a stati bozza→iscrizioni_aperte→iscrizioni_chiuse→
+// in_corso→concluso. Qui nell'app servono solo i campi che la lista/
+// iscrizione mostrano — non l'intero motore di gironi/tabellone, che
+// resta lato gestionale.
+export type StatoCampionatoTorneo = 'bozza' | 'iscrizioni_aperte' | 'iscrizioni_chiuse' | 'in_corso' | 'concluso';
+
+export interface Campionato {
+  id: string;
+  centro_id: string;
+  nome: string;
+  sport: string;
+  tipo_iscrizione: 'singolo' | 'coppia';
+  divisione: 'maschile' | 'femminile' | 'misto';
+  stato: StatoCampionatoTorneo;
+  apertura_iscrizioni_at: string | null;
+  chiusura_iscrizioni_at: string | null;
+  inizio_evento_at: string | null;
+  quota_iscrizione_a_giocatore: number;
+  quota_include_campo: boolean;
+  // conteggi lato client
+  iscritti_count?: number;
+  iscritto?: boolean;
+}
+
+export interface CampionatoPartecipante {
+  id: string;
+  campionato_id: string;
+  giocatore_1_id: string;
+  giocatore_2_id: string | null;
+  ranking: number;
+  girone_id: string | null;
+  stato: 'iscritto' | 'ritirato';
+}
+
+export interface Torneo {
+  id: string;
+  centro_id: string;
+  nome: string;
+  sport: string;
+  format_type: 'round_robin' | 'single_elimination' | 'americano' | 'swiss';
+  tipo_iscrizione: 'singolo' | 'coppia';
+  divisione: 'maschile' | 'femminile' | 'misto';
+  stato: StatoCampionatoTorneo;
+  apertura_iscrizioni_at: string | null;
+  chiusura_iscrizioni_at: string | null;
+  inizio_at: string | null;
+  quota_iscrizione_a_giocatore: number;
+  quota_include_campo: boolean;
+  // solo americano ha un tetto di iscritti configurabile (vedi
+  // backend/app/services/torneo.py:am_config_schema) — usato per
+  // derivare il "sold out" lato app.
+  format_config?: { max_iscritti?: number | null; [key: string]: unknown };
+  // conteggi lato client
+  iscritti_count?: number;
+  iscritto?: boolean;
+}
+
+export interface TorneoPartecipante {
+  id: string;
+  torneo_id: string;
+  giocatore_1_id: string;
+  giocatore_2_id: string | null;
+  ranking: number;
+  stato: 'iscritto' | 'ritirato';
+}
+
+// Dettaglio campionato/torneo (classifica, giornate/round, tabellone) —
+// stessa forma esatta dei modelli del gestionale (stars-system/backend/
+// app/models/campionato.py, torneo.py), solo i campi che la vista di
+// sola lettura del giocatore mostra.
+export interface CampionatoGirone {
+  id: string;
+  campionato_id: string;
+  nome: string;
+}
+
+export interface CampionatoGiornata {
+  id: string;
+  campionato_id: string;
+  fase: 'gironi' | 'playoff';
+  numero: number;
+  stato: string;
+  aperta: boolean;
+}
+
+export interface CampionatoMatch {
+  id: string;
+  campionato_id: string;
+  giornata_id: string;
+  girone_id: string | null;
+  partecipante_a_id: string | null;
+  partecipante_b_id: string | null;
+  set_risultati: { a: number; b: number; tb?: boolean }[];
+  set_a: number | null;
+  set_b: number | null;
+  vincitore_id: string | null;
+  stato: 'programmato' | 'giocato' | 'forfait';
+  data: string | null;
+  prossimo_match_id: string | null;
+  slot_prossimo_match: 'a' | 'b' | null;
+  bye: boolean;
+  created_at: string;
+}
+
+export interface TorneoRound {
+  id: string;
+  torneo_id: string;
+  fase: string; // "round_robin" | "bracket"
+  numero: number;
+  stato: string;
+  aperta: boolean;
+}
+
+export interface TorneoMatch {
+  id: string;
+  torneo_id: string;
+  round_id: string;
+  partecipante_a_id: string | null;
+  partecipante_b_id: string | null;
+  // solo americano: coppie effimere (2 id di TorneoPartecipante ciascuna),
+  // niente vincitore secco — vedi backend app/models/torneo.py.
+  team_a_ids?: string[] | null;
+  team_b_ids?: string[] | null;
+  punti_a?: number | null;
+  punti_b?: number | null;
+  set_risultati: { a: number; b: number; tb?: boolean }[];
+  set_a: number | null;
+  set_b: number | null;
+  vincitore_id: string | null;
+  stato: 'programmato' | 'giocato' | 'forfait';
+  data: string | null;
+  prossimo_match_id: string | null;
+  slot_prossimo_match: 'a' | 'b' | null;
+  bye: boolean;
+  created_at: string;
+}
+
+/** Riga di classifica girone/torneo round_robin — stessa forma di ritorno
+ *  di calcola_classifica_girone/rr_standings (già ordinata dal backend,
+ *  spareggi già risolti: qui non si riordina, si mostra così com'è). */
+export interface RigaClassifica {
+  partecipante_id: string;
+  punti: number;
+  vittorie: number;
+  sconfitte: number;
+  set_vinti: number;
+  set_persi: number;
+  ranking: number;
+  partite: number;
 }
 
 export interface CoinSaldo {
