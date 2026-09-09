@@ -41,6 +41,7 @@ interface Voce {
   divisione: 'maschile' | 'femminile' | 'misto';
   aperto: boolean; // iscrizioni aperte ora
   soldOut: boolean; // chiuso per limite iscritti raggiunto, non ancora iniziato
+  bozza: boolean; // non ancora pubblicato/aperto (bozza/draft/cancelled) — mai visibile a chi non è iscritto
   concluso: boolean;
   iscrittiCount: number;
   maxPartecipanti?: number | null;
@@ -121,11 +122,12 @@ export default function Eventi() {
   const voci: Voce[] = useMemo(() => [
     ...eventi.map((e): Voce => ({
       tipo: 'evento', id: e.id, centroId: e.centro_id, nome: e.nome, descrizione: e.descrizione, divisione: e.divisione,
-      aperto: e.stato === 'ready', soldOut: false, concluso: e.stato === 'completed', iscrittiCount: e.iscritti_count ?? 0, maxPartecipanti: e.max_partecipanti,
+      aperto: e.stato === 'ready', soldOut: false, bozza: e.stato === 'draft' || e.stato === 'cancelled',
+      concluso: e.stato === 'completed', iscrittiCount: e.iscritti_count ?? 0, maxPartecipanti: e.max_partecipanti,
     })),
     ...campionati.map((c): Voce => ({
       tipo: 'campionato', id: c.id, centroId: c.centro_id, nome: c.nome, sport: c.sport, tipoIscrizione: c.tipo_iscrizione, divisione: c.divisione,
-      aperto: c.stato === 'iscrizioni_aperte', soldOut: false, concluso: c.stato === 'concluso', iscrittiCount: c.iscritti_count ?? 0,
+      aperto: c.stato === 'iscrizioni_aperte', soldOut: false, bozza: c.stato === 'bozza', concluso: c.stato === 'concluso', iscrittiCount: c.iscritti_count ?? 0,
       quota: c.quota_iscrizione_a_giocatore,
     })),
     ...tornei.map((t): Voce => {
@@ -135,7 +137,7 @@ export default function Eventi() {
       const concluso = t.stato === 'concluso';
       return {
         tipo: 'torneo', id: t.id, centroId: t.centro_id, nome: t.nome, sport: t.sport, tipoIscrizione: t.tipo_iscrizione, divisione: t.divisione ?? 'misto',
-        aperto: t.stato === 'iscrizioni_aperte', soldOut: soldOutDi(chiuso, concluso, iscrittiCount, maxPartecipanti),
+        aperto: t.stato === 'iscrizioni_aperte', soldOut: soldOutDi(chiuso, concluso, iscrittiCount, maxPartecipanti), bozza: t.stato === 'bozza',
         concluso, iscrittiCount, maxPartecipanti, quota: t.quota_iscrizione_a_giocatore,
       };
     }),
@@ -192,16 +194,22 @@ export default function Eventi() {
   // "lascia gli eventi visibili in 'iscriviti' anche se sold out ma
   // sotto una sottocategoria 'sold out' fino che non inizia l'evento") —
   // ordinati con gli aperti prima, i sold out in coda (vedi il rendering
-  // sotto per la sottocategoria vera e propria).
-  const iscrivibili = voci.filter((v) => v.aperto || v.soldOut);
+  // sotto per la sottocategoria vera e propria). Stesso principio esteso
+  // (fix utente esplicito) a chi ha chiuso le iscrizioni senza essere
+  // sold out (es. chiusura manuale, o un formato senza tetto iscritti):
+  // resta visibile per chi vuole solo seguirlo, in una sottocategoria
+  // "Iscrizioni chiuse" — mai però una bozza/draft non ancora pubblicata.
+  const iscrivibili = voci.filter((v) => !v.bozza && !v.concluso);
   const miei = voci.filter((v) => eIscritto(v) && !v.concluso);
   const passati = voci.filter((v) => v.concluso && eIscritto(v));
   const base = tabE === 'attivi' ? iscrivibili : tabE === 'miei' ? miei : passati;
+  // Ordine: aperti (0) → chiusi non sold out (1) → sold out (2).
+  const rangoStato = (v: Voce) => (v.aperto ? 0 : v.soldOut ? 2 : 1);
   const filtrati = base
     .filter((v) => q ? v.nome.toLowerCase().includes(q.toLowerCase()) : true)
     .filter(passaFiltroCentro)
     .filter(passaFiltroTipo)
-    .sort((a, b) => (a.soldOut === b.soldOut ? 0 : a.soldOut ? 1 : -1));
+    .sort((a, b) => rangoStato(a) - rangoStato(b));
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -289,8 +297,13 @@ export default function Eventi() {
           // esplicito): un'intestazione appena prima del primo elemento
           // sold out, dato che filtrati è già ordinato aperti-poi-sold-out.
           const primoSoldOut = tabE === 'attivi' && v.soldOut && (i === 0 || !filtrati[i - 1].soldOut);
+          // Sottocategoria "Iscrizioni chiuse" (fix utente esplicito):
+          // stesso principio, per chi ha chiuso le iscrizioni senza essere
+          // sold out — intestazione appena prima del primo elemento così.
+          const primoChiuso = tabE === 'attivi' && chiuso && !v.soldOut && (i === 0 || filtrati[i - 1].aperto);
           return (
             <React.Fragment key={`${v.tipo}:${v.id}`}>
+              {primoChiuso && <Text style={s.sottocategoria}>Iscrizioni chiuse</Text>}
               {primoSoldOut && <Text style={s.sottocategoria}>Sold out</Text>}
               <Card style={s.card}>
                 <Pressable onPress={() => apribile && router.push(`/eventi/${v.tipo}/${v.id}`)} disabled={!apribile}>

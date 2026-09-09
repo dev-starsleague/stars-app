@@ -620,6 +620,14 @@ export interface TorneoMatch {
   prossimo_match_id: string | null;
   slot_prossimo_match: 'a' | 'b' | null;
   bye: boolean;
+  // solo stars_of_the_court: game vinti da ciascun lato (non punti — il
+  // punteggio individuale si deriva da questi + i moltiplicatori
+  // format_config.points), is_stars_court/stars_side identificano il
+  // match sul "campo STARS" del turno — vedi backend app/models/torneo.py.
+  games_a?: number | null;
+  games_b?: number | null;
+  is_stars_court?: boolean;
+  stars_side?: 'a' | 'b' | null;
   created_at: string;
 }
 

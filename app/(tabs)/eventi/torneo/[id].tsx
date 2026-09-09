@@ -52,6 +52,7 @@ export default function TorneoDettaglio() {
   const eEliminazione = dettaglio?.torneo.format_type === 'single_elimination';
   const eAmericano = dettaglio?.torneo.format_type === 'americano';
   const eSwiss = dettaglio?.torneo.format_type === 'swiss';
+  const eStars = dettaglio?.torneo.format_type === 'stars_of_the_court';
 
   // Tabellone: colonne = round fase "bracket" — sia single_elimination
   // (l'intero torneo) sia la fase finale opzionale dello svizzero dopo i
@@ -82,6 +83,38 @@ export default function TorneoDettaglio() {
   // "bye" dedicata, a differenza degli altri formati: l'assenza dal
   // round stesso è il riposo).
   const roundRotazione = useMemo(() => sortByNumero<TorneoRound>(dettaglio?.round.filter((r) => r.fase === 'rotation') ?? []), [dettaglio]);
+  // Turni (Stars of the Court): round fase "stars_rotation" — un campo a
+  // rotazione ("campo STARS", is_stars_court/stars_side sul match) è il
+  // trono, gli altri sono normali; punteggio a game (games_a/b), non punti
+  // (vedi services/torneo.py:sotc_generate_schedule/sotc_genera_turno_successivo).
+  const roundStars = useMemo(() => sortByNumero<TorneoRound>(dettaglio?.round.filter((r) => r.fase === 'stars_rotation') ?? []), [dettaglio]);
+  // Chi sono le STARS attuali e da quanti turni sono sul trono — stesso
+  // calcolo del gestionale (src/routes/tornei/[id]/+page.svelte), i match
+  // is_stars_court ordinati per numero turno decrescente.
+  const matchStarsOrdinati = useMemo(() => {
+    if (!dettaglio || !eStars) return [];
+    const numeroDiRound = new Map(dettaglio.round.map((r) => [r.id, r.numero]));
+    return dettaglio.match
+      .filter((m) => m.is_stars_court)
+      .map((m) => ({ m, numero: numeroDiRound.get(m.round_id) ?? 0 }))
+      .sort((a, b) => b.numero - a.numero);
+  }, [dettaglio, eStars]);
+  const starsAttuali = useMemo(() => {
+    const ultimo = matchStarsOrdinati[0]?.m;
+    if (!ultimo) return null;
+    return (ultimo.stars_side === 'a' ? ultimo.team_a_ids : ultimo.team_b_ids) ?? null;
+  }, [matchStarsOrdinati]);
+  const starsDaQuantiTurni = useMemo(() => {
+    if (!starsAttuali) return 0;
+    const chiave = [...starsAttuali].sort().join(',');
+    let n = 0;
+    for (const { m } of matchStarsOrdinati) {
+      const ids = m.stars_side === 'a' ? m.team_a_ids : m.team_b_ids;
+      if (!ids || [...ids].sort().join(',') !== chiave) break;
+      n++;
+    }
+    return n;
+  }, [matchStarsOrdinati, starsAttuali]);
   const riposanoNelRound = (roundId: string) => {
     if (!dettaglio) return [];
     const inCampo = new Set<string>();
@@ -152,7 +185,7 @@ export default function TorneoDettaglio() {
           <TabellaClassifica righe={classifica} nomeDi={nomeDi} />
         </Card>
 
-        {!eEliminazione && !eAmericano && !eSwiss && (
+        {!eEliminazione && !eAmericano && !eSwiss && !eStars && (
           <>
             <Text style={s.sezioneTitolo}>Giornate</Text>
             {roundGironi.length === 0 ? (
@@ -234,6 +267,46 @@ export default function TorneoDettaglio() {
           </>
         )}
 
+        {eStars && (
+          <>
+            <Text style={s.sezioneTitolo}>Turni</Text>
+            {starsAttuali && (
+              <Card style={[s.card, s.starsBanner]}>
+                <Ionicons name="trophy" size={18} color={colors.gold} />
+                <Text style={s.starsBannerTesto}>
+                  STARS attuali: <Text style={{ fontWeight: '800' }}>{starsAttuali.map((pid) => nomeDi(pid)).join(' / ')}</Text> — sul trono da {starsDaQuantiTurni} {starsDaQuantiTurni === 1 ? 'turno' : 'turni'}
+                </Text>
+              </Card>
+            )}
+            {roundStars.length === 0 ? (
+              <Card style={s.card}><Muted style={{ textAlign: 'center' }}>Calendario non ancora generato.</Muted></Card>
+            ) : roundStars.map((r) => {
+              const match = dettaglio.match.filter((m) => m.round_id === r.id);
+              if (match.length === 0) return null;
+              return (
+                <Card key={r.id} style={s.card}>
+                  <Text style={s.giornataTitolo}>Turno {r.numero}</Text>
+                  {match.map((m) => {
+                    const giocato = m.stato === 'giocato';
+                    const vinceA = giocato && (m.games_a ?? 0) > (m.games_b ?? 0);
+                    const vinceB = giocato && (m.games_b ?? 0) > (m.games_a ?? 0);
+                    return (
+                      <View key={m.id}>
+                        {m.is_stars_court && <Text style={s.starsCampoLabel}>👑 Campo STARS</Text>}
+                        <View style={s.matchAmRiga}>
+                          <Text style={[s.matchAmSquadra, vinceA && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_a_ids)}</Text>
+                          <Text style={s.matchAmVs}>{giocato ? `${m.games_a}-${m.games_b}` : 'vs'}</Text>
+                          <Text style={[s.matchAmSquadra, s.matchAmSquadraB, vinceB && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_b_ids)}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </Card>
+              );
+            })}
+          </>
+        )}
+
         <Text style={s.sezioneTitolo}>Partecipanti ({dettaglio.partecipanti.length})</Text>
         <Card style={s.card}>
           {dettaglio.partecipanti.length === 0 ? (
@@ -280,5 +353,8 @@ function makeStyles(colors: AppColors) {
     matchAmSquadraB: { textAlign: 'right' },
     matchAmVincitore: { fontWeight: '800', color: colors.gold },
     matchAmVs: { color: colors.slate, fontSize: Font.tiny, fontWeight: '700', minWidth: 40, textAlign: 'center' },
+    starsBanner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: 'rgba(255,175,0,0.12)', borderWidth: 1, borderColor: 'rgba(255,175,0,0.35)' },
+    starsBannerTesto: { flex: 1, color: colors.navyDeep, fontSize: Font.small },
+    starsCampoLabel: { color: colors.gold, fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
   });
 }

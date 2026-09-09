@@ -1382,7 +1382,12 @@ export async function getPosizioneCampionato(campionatoId: string, giocatoreId: 
 export async function getPosizioneTorneo(torneoId: string, giocatoreId: string): Promise<number | null> {
   if (isMock()) return null;
   const { data: torneo } = await apiGet<Torneo>(`/tornei/${torneoId}`);
-  if (!torneo || (torneo.format_type !== 'round_robin' && torneo.format_type !== 'swiss')) return null;
+  // round_robin/swiss/americano/stars_of_the_court hanno tutti una
+  // classifica reale calcolata lato backend (rr_standings/sw_standings/
+  // am_standings/sotc_standings) — solo single_elimination non ne ha una
+  // (il "piazzamento" lì è il tabellone, gestito altrove).
+  const formatiConClassifica = ['round_robin', 'swiss', 'americano', 'stars_of_the_court'];
+  if (!torneo || !formatiConClassifica.includes(torneo.format_type)) return null;
   const [{ data: p1 }, { data: p2 }] = await Promise.all([
     apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: torneoId, giocatore_1_id: giocatoreId }),
     apiGet<TorneoPartecipante[]>('/tornei-partecipanti', { torneo_id: torneoId, giocatore_2_id: giocatoreId }),
