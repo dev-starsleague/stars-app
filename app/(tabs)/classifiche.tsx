@@ -1,12 +1,9 @@
-// Classifiche — 3 sezioni (fix utente esplicito):
+// Classifiche — 2 sezioni (fix utente esplicito, RanDuo rimosso):
 // 1. Ranking (maschile, "RanKing") / RanQueen (femminile) — il PSL Ranking
 //    Engine, filtrabile per zona geografica, centro e categoria.
 // 2. Star del mese — la classifica mensile per punti di UN centro (come lo
 //    screenshot fornito dall'utente: podio a 3 con medaglie + lista).
-// 3. RanDuo — le coppie di doppio più forti di un centro (nome inventato,
-//    fix utente esplicito "inventati un nome carino"), nascosta per gli
-//    sport individuali (SPORT_SINGOLI, es. Tennis: fix utente esplicito).
-// Tutte e 3 seguono lo sport globale scelto nell'header (fix utente
+// Entrambe seguono lo sport globale scelto nell'header (fix utente
 // esplicito, "deve essere fatto per ogni sport").
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal, RefreshControl, Image } from 'react-native';
@@ -19,18 +16,23 @@ import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { useSport } from '../../lib/sport';
-import { SPORT_SINGOLI, categoriaRanking, CATEGORIE_RANKING } from '../../lib/stars';
+import { categoriaRanking, CATEGORIE_RANKING } from '../../lib/stars';
 import {
-  getCentri, getClassificaRanking, getClassifica, getClassificaCoppie, centriPreferiti, creaSfida,
+  getCentri, getClassificaRanking, getClassifica, centriPreferiti,
 } from '../../lib/api';
 import type { FiltroClassificaRanking } from '../../lib/api';
-import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
-import { Card, IconButton, Input, Muted, Segmented, immagineProfiloDefault, Avatar, AvatarCoppia, Button } from '../../components/ui';
+import { Card, IconButton, Input, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../../constants/theme';
-import type { Centro, Genere, RankingGiocatore, Giocatore, ClassificaMensile, RigaClassificaCoppia } from '../../types/models';
+import type { Centro, Genere, RankingGiocatore, Giocatore, ClassificaMensile } from '../../types/models';
 
-type Sezione = 'ranking' | 'stelle' | 'coppie';
+// Categorie mostrate nel filtro Ranking (fix utente esplicito): "Non
+// valutato" tolta (non è una fascia di livello, è "dati insufficienti" —
+// filtrare per quello non ha senso) e ordine invertito rispetto a
+// CATEGORIE_RANKING, dal più basso al più alto (Spark → 8⭐).
+const CATEGORIE_FILTRO_RANKING = [...CATEGORIE_RANKING].filter((c) => c !== 'Non valutato').reverse();
+
+type Sezione = 'ranking' | 'stelle';
 
 export default function Classifiche() {
   const { colors } = useTheme();
@@ -41,15 +43,9 @@ export default function Classifiche() {
 
   useEffect(() => { getCentri().then(setCentri); }, []);
 
-  const sportSingolare = SPORT_SINGOLI.includes(sportAttivo);
-  // Un cambio sport a metà mentre si è sulla scheda "coppie" e quello nuovo
-  // è singolare non deve lasciare l'utente su una scheda ormai inesistente.
-  useEffect(() => { if (sportSingolare && sezione === 'coppie') setSezione('ranking'); }, [sportSingolare, sezione]);
-
   const opzioniSezione = [
     { value: 'ranking' as const, label: 'Ranking', icon: 'trophy-outline' as const },
-    { value: 'stelle', label: '⭐ Star del mese' },
-    ...(sportSingolare ? [] : [{ value: 'coppie' as const, label: '🤝 RanDuo' }]),
+    { value: 'stelle' as const, label: '⭐ Star del mese' },
   ];
 
   return (
@@ -60,7 +56,6 @@ export default function Classifiche() {
       </View>
       {sezione === 'ranking' && <SezioneRanking sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
       {sezione === 'stelle' && <SezioneStelle sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
-      {sezione === 'coppie' && !sportSingolare && <SezioneCoppie sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
     </SafeAreaView>
   );
 }
@@ -72,6 +67,7 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
   sportAttivo: string; centri: Centro[]; colors: AppColors; s: ReturnType<typeof makeStyles>;
 }) {
   const router = useRouter();
+  const { me } = useAuth();
   const [genere, setGenere] = useState<Genere>('M');
   const [filtro, setFiltro] = useState<FiltroClassificaRanking>({ tipo: 'globale' });
   const [categoria, setCategoria] = useState<string | null>(null);
@@ -100,7 +96,10 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
     iniziali: iniziali(r.giocatore?.nome),
     genere: r.giocatore?.genere,
     titolo: nomeCompleto(r.giocatore),
-    sottotitolo: categoriaRanking(r.ranking),
+    // Nickname al posto della categoria (fix utente esplicito: "tanto c'è
+    // già il ranking di lato") — vuoto se il giocatore non ne ha uno,
+    // niente "Nessun nickname" ripetuto su ogni riga di una lista lunga.
+    sottotitolo: r.giocatore?.profilo?.nickname ? `"${r.giocatore.profilo.nickname}"` : '',
     valore: r.ranking.toFixed(2),
     onPress: () => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: r.giocatore_id } }),
   }));
@@ -110,40 +109,90 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
     : filtro.tipo === 'zona' ? filtro.zonaValore
     : 'Tutta Italia';
 
+  // Vedere subito la propria posizione e i dintorni, invece della cima
+  // della lista (fix utente esplicito) — `mioY` arriva da Classifica via
+  // onLayout, non appena la riga del giocatore loggato viene disegnata;
+  // lo scroll iniziale scatta una volta sola per caricamento (nuovo
+  // filtro/sport/genere = nuova lista = ha senso rimostrare la mia
+  // posizione da capo), non ad ogni render.
+  const scrollRef = useRef<ScrollView>(null);
+  const mioY = useRef<number | null>(null);
+  const giaScrollato = useRef(false);
+  const [inCima, setInCima] = useState(false);
+  // Stato vero (non solo il ref mioY, che non fa ri-renderizzare) per
+  // mostrare/nascondere il tastino appena la riga del giocatore viene
+  // disegnata la prima volta.
+  const [hoPosizione, setHoPosizione] = useState(false);
+  useEffect(() => { giaScrollato.current = false; mioY.current = null; setInCima(false); setHoPosizione(false); }, [righeGeneriche.length, sportAttivo, genere, filtro, categoria]);
+  const onMioLayout = useCallback((y: number) => {
+    mioY.current = y;
+    setHoPosizione(true);
+    if (!giaScrollato.current) {
+      giaScrollato.current = true;
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 90), animated: false });
+    }
+  }, []);
+  const vaiInCima = () => { scrollRef.current?.scrollTo({ y: 0, animated: true }); setInCima(true); };
+  const vaiAllaMiaPosizione = () => {
+    if (mioY.current != null) scrollRef.current?.scrollTo({ y: Math.max(0, mioY.current - 90), animated: true });
+    setInCima(false);
+  };
+
   return (
-    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      <Card style={s.filterCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 4 }}>
-          <IconButton icon="options-outline" size={36} color={filtriAttivi > 0 ? colors.gold : undefined} onPress={() => setMostraFiltri(true)} />
-          <IconButton icon="search" size={36} color={ricercaAperta ? colors.gold : undefined} onPress={() => setRicercaAperta((v) => !v)} />
-          <Segmented
-            value={genere}
-            onChange={(v) => setGenere(v as Genere)}
-            options={[{ value: 'M', label: '🏆 RanKing' }, { value: 'F', label: '👑 RanQueen' }]}
-            style={{ flex: 1 }}
+    <View style={{ flex: 1 }}>
+      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <Card style={s.filterCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 4 }}>
+            <IconButton icon="options-outline" size={36} color={filtriAttivi > 0 ? colors.gold : undefined} onPress={() => setMostraFiltri(true)} />
+            <IconButton icon="search" size={36} color={ricercaAperta ? colors.gold : undefined} onPress={() => setRicercaAperta((v) => !v)} />
+            <Segmented
+              value={genere}
+              onChange={(v) => setGenere(v as Genere)}
+              options={[{ value: 'M', label: '🏆 RanKing' }, { value: 'F', label: '👑 RanQueen' }]}
+              style={{ flex: 1 }}
+            />
+          </View>
+          {/* Riepilogo filtri: ambito + categoria, non più lo sport (fix
+              utente esplicito, "bisogna levare lo sport" — c'è già nell'header). */}
+          <Muted style={{ marginBottom: ricercaAperta ? Spacing.sm : 0 }}>{etichettaAmbito}{categoria ? ` · ${categoria}` : ''}</Muted>
+          {ricercaAperta && (
+            <Input icon="search" placeholder="Cerca giocatore…" value={ricerca} onChangeText={setRicerca} style={{ height: 42 }} autoFocus />
+          )}
+        </Card>
+
+        {caricamento ? (
+          <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Carico…</Muted>
+        ) : (
+          <Classifica
+            righe={righeGeneriche} coloreValore={colors.navyDeep} unitaValore=""
+            vuoto={`Nessun giocatore ${genere === 'M' ? 'valutato' : 'valutata'} ${categoria ? `nella categoria ${categoria}` : ''} per ${sportAttivo} qui.`}
+            mioKey={me?.id} onMioLayout={onMioLayout} colors={colors} s={s}
           />
-        </View>
-        <Muted style={{ marginBottom: ricercaAperta ? Spacing.sm : 0 }}>{etichettaAmbito} · {sportAttivo}</Muted>
-        {ricercaAperta && (
-          <Input icon="search" placeholder="Cerca giocatore…" value={ricerca} onChangeText={setRicerca} style={{ height: 42 }} autoFocus />
         )}
-      </Card>
 
-      {caricamento ? (
-        <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Carico…</Muted>
-      ) : (
-        <Classifica righe={righeGeneriche} coloreValore={colors.navyDeep} unitaValore="" vuoto={`Nessun giocatore ${genere === 'M' ? 'valutato' : 'valutata'} ${categoria ? `nella categoria ${categoria}` : ''} per ${sportAttivo} qui.`} colors={colors} s={s} />
-      )}
+        {mostraFiltri && (
+          <ModaleFiltriRanking
+            centri={centri} filtro={filtro} categoria={categoria}
+            onChiudi={() => setMostraFiltri(false)}
+            onApplica={(f, c) => { setFiltro(f); setCategoria(c); setMostraFiltri(false); }}
+          />
+        )}
+        <View style={{ height: 20 }} />
+      </ScrollView>
 
-      {mostraFiltri && (
-        <ModaleFiltriRanking
-          centri={centri} filtro={filtro} categoria={categoria}
-          onChiudi={() => setMostraFiltri(false)}
-          onApplica={(f, c) => { setFiltro(f); setCategoria(c); setMostraFiltri(false); }}
-        />
+      {/* Tastino in alto a sx (fix utente esplicito): "torna in cima" se
+          si sta guardando la propria posizione, "torna alla mia posizione"
+          una volta usato quello — un solo tastino che cambia, non due
+          insieme. Non compare se il giocatore non è in classifica (mioY
+          mai valorizzato). */}
+      {hoPosizione && !caricamento && (
+        <Pressable style={s.scrollToggleBtn} onPress={inCima ? vaiAllaMiaPosizione : vaiInCima}>
+          <BlurView intensity={30} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.surface + 'CC' }]} />
+          <Ionicons name={inCima ? 'locate' : 'arrow-up'} size={16} color={colors.gold} />
+        </Pressable>
       )}
-      <View style={{ height: 20 }} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -244,7 +293,7 @@ function ModaleFiltriRanking({ centri, filtro, categoria, onChiudi, onApplica }:
               <Pressable style={[s.pillScelta, !cat && s.pillSceltaAttiva]} onPress={() => setCat(null)}>
                 <Text style={[s.pillSceltaText, !cat && s.pillSceltaTextAttiva]}>Tutte</Text>
               </Pressable>
-              {CATEGORIE_RANKING.map((c) => (
+              {CATEGORIE_FILTRO_RANKING.map((c) => (
                 <Pressable key={c} style={[s.pillScelta, cat === c && s.pillSceltaAttiva]} onPress={() => setCat(c)}>
                   <Text style={[s.pillSceltaText, cat === c && s.pillSceltaTextAttiva]}>{c}</Text>
                 </Pressable>
@@ -312,7 +361,19 @@ function SezioneStelle({ sportAttivo, centri, colors, s }: {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const tornaAlMeseAttuale = () => { setMeseOffset(0); meseScrollRef.current?.scrollTo({ x: 0, animated: true }); };
+  // Mese attuale a destra, i mesi passati si vedono scorrendo verso
+  // sinistra (fix utente esplicito) — MESI_OFFSET va da 0 (attuale) a 11
+  // (più vecchio), qui va invertito per il rendering: il più vecchio
+  // all'estrema sinistra, lo 0 all'estrema destra, come una timeline.
+  // `larghezzaContenuto` arriva da onContentSizeChange (misura reale, non
+  // una stima) e serve sia allo scroll iniziale sia a "torna al mese
+  // attuale", ora uno scrollToEnd invece di uno scrollTo({x:0}).
+  const meseOffsetInverso = useMemo(() => [...MESI_OFFSET].reverse(), []);
+  const larghezzaContenutoMesi = useRef(0);
+  const tornaAlMeseAttuale = () => {
+    setMeseOffset(0);
+    meseScrollRef.current?.scrollTo({ x: larghezzaContenutoMesi.current, animated: true });
+  };
 
   const righeGeneriche: RigaGenerica[] = lista.map((r) => ({
     key: r.id,
@@ -324,278 +385,120 @@ function SezioneStelle({ sportAttivo, centri, colors, s }: {
     onPress: () => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: r.giocatore_id } }),
   }));
 
-  return (
-    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg }}>
-        <ScrollView
-          ref={meseScrollRef} horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: Spacing.lg, paddingRight: Spacing.xxl }} style={{ flex: 1 }}
-        >
-          {MESI_OFFSET.map((o) => (
-            <Pressable key={o} onPress={() => setMeseOffset(o)}>
-              <Text style={o === meseOffset ? s.meseGrande : s.meseMuted} numberOfLines={1}>{nomeMese(o)}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        {meseOffset !== 0 && (
-          <IconButton icon="today-outline" size={34} color={colors.gold} onPress={tornaAlMeseAttuale} style={{ marginLeft: Spacing.sm }} />
-        )}
-      </View>
-
-      <Card style={s.filterCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: ricercaAperta ? Spacing.sm : Spacing.md }}>
-          <IconButton icon={soloPreferiti ? 'star' : 'star-outline'} size={36} color={soloPreferiti ? colors.gold : undefined} onPress={() => setSoloPreferiti((v) => !v)} />
-          <IconButton icon="search" size={36} color={ricercaAperta ? colors.gold : undefined} onPress={() => setRicercaAperta((v) => !v)} />
-          <Segmented
-            value={genere}
-            onChange={(v) => setGenere(v as Genere)}
-            options={[{ value: 'M', label: '🏆 Maschile' }, { value: 'F', label: '👑 Femminile' }]}
-            style={{ flex: 1 }}
-          />
-        </View>
-        {ricercaAperta && (
-          <Input
-            icon="search" placeholder="Cerca centro…" value={ricerca} onChangeText={setRicerca}
-            style={{ marginBottom: Spacing.md, height: 42 }} autoFocus
-          />
-        )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm }}>
-          {centriFiltrati.length === 0 && <Muted>Nessun centro corrisponde ai filtri.</Muted>}
-          {centriFiltrati.map((c) => (
-            <Pressable key={c.id} style={[s.pillScelta, centroId === c.id && s.pillSceltaAttiva]} onPress={() => setCentroId(c.id)}>
-              <Text style={[s.pillSceltaText, centroId === c.id && s.pillSceltaTextAttiva]} numberOfLines={1}>{c.nome}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </Card>
-
-      {caricamento ? (
-        <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Carico…</Muted>
-      ) : (
-        <Classifica righe={righeGeneriche} coloreValore={colors.gold} unitaValore=" pt" vuoto={`Nessun punteggio a ${nomeMese(meseOffset)} per ${sportAttivo}.`} colors={colors} s={s} />
-      )}
-      <View style={{ height: 20 }} />
-    </ScrollView>
-  );
-}
-
-// ============================================================
-// Sezione 3 — RanDuo (classifica di coppia)
-// ============================================================
-function SezioneCoppie({ sportAttivo, centri, colors, s }: {
-  sportAttivo: string; centri: Centro[]; colors: AppColors; s: ReturnType<typeof makeStyles>;
-}) {
-  const { me } = useAuth();
-  const [centroId, setCentroId] = useState<string | null>(null);
-  const [righe, setRighe] = useState<RigaClassificaCoppia[]>([]);
-  const [caricamento, setCaricamento] = useState(true);
-  const [soloPreferiti, setSoloPreferiti] = useState(false);
-  const [ricercaAperta, setRicercaAperta] = useState(false);
-  const [ricerca, setRicerca] = useState('');
-  const [categoriaCoppia, setCategoriaCoppia] = useState<CategoriaCoppia>('M');
-  // Profilo minimale di coppia (fix utente esplicito: "se viene cliccato
-  // il nome o l'immagine devono aprirsi le statistiche di coppia") —
-  // aperto da qualunque riga (podio o lista), niente fetch aggiuntivo: la
-  // riga della classifica ha già tutto (avatar, nome, cognome, nickname,
-  // partite/vittorie/winrate).
-  const [coppiaSelezionata, setCoppiaSelezionata] = useState<RigaClassificaCoppia | null>(null);
-
-  const preferiti = useMemo(() => centriPreferiti(me), [me]);
-  const centriFiltrati = centri
-    .filter((c) => !soloPreferiti || preferiti.has(c.id))
-    .filter((c) => !ricerca.trim() || c.nome.toLowerCase().includes(ricerca.trim().toLowerCase()));
-
-  useEffect(() => {
-    if (centroId || centri.length === 0) return;
-    const preferito = me?.profilo?.centri_preferiti?.find((id) => centri.some((c) => c.id === id));
-    setCentroId(preferito ?? centri[0].id);
-  }, [centri, me, centroId]);
-
-  const load = useCallback(async () => {
-    if (!centroId) return;
-    setCaricamento(true);
-    setRighe(await getClassificaCoppie(centroId, sportAttivo));
-    setCaricamento(false);
-  }, [centroId, sportAttivo]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const righeFiltrate = useMemo(
-    () => righe.filter((r) => categoriaCoppiaDi(r) === categoriaCoppia),
-    [righe, categoriaCoppia]
-  );
-  const righeGeneriche: RigaGenerica[] = righeFiltrate.map((r) => ({
-    key: `${r.giocatore1Id}_${r.giocatore2Id}`,
-    iniziali: `${iniziali(r.nome1).charAt(0)}${iniziali(r.nome2).charAt(0)}`,
-    titolo: `${primoNome(r.nome1)} & ${primoNome(r.nome2)}`,
-    sottotitolo: `${r.partiteInsieme} partite · ${r.winRatePercento}%`,
-    valore: `${r.vittorie}`,
-    coppia: r,
-    onPress: () => setCoppiaSelezionata(r),
-  }));
-
-  return (
-    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      <Card style={s.filterCard}>
-        <Text style={s.filterLabel}>Le coppie più forti · {sportAttivo}</Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.md, marginBottom: ricercaAperta ? Spacing.sm : Spacing.md }}>
-          <IconButton icon={soloPreferiti ? 'star' : 'star-outline'} size={36} color={soloPreferiti ? colors.gold : undefined} onPress={() => setSoloPreferiti((v) => !v)} />
-          <IconButton icon="search" size={36} color={ricercaAperta ? colors.gold : undefined} onPress={() => setRicercaAperta((v) => !v)} />
-          <Segmented
-            value={categoriaCoppia}
-            onChange={(v) => setCategoriaCoppia(v as CategoriaCoppia)}
-            options={[
-              { value: 'M', label: '🏆 Maschile' },
-              { value: 'F', label: '👑 Femminile' },
-              { value: 'X', label: '🤝 Misto' },
-            ]}
-            style={{ flex: 1 }}
-          />
-        </View>
-        {ricercaAperta && (
-          <Input
-            icon="search" placeholder="Cerca centro…" value={ricerca} onChangeText={setRicerca}
-            style={{ marginBottom: Spacing.md, height: 42 }} autoFocus
-          />
-        )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm }}>
-          {centriFiltrati.length === 0 && <Muted>Nessun centro corrisponde ai filtri.</Muted>}
-          {centriFiltrati.map((c) => (
-            <Pressable key={c.id} style={[s.pillScelta, centroId === c.id && s.pillSceltaAttiva]} onPress={() => setCentroId(c.id)}>
-              <Text style={[s.pillSceltaText, centroId === c.id && s.pillSceltaTextAttiva]} numberOfLines={1}>{c.nome}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </Card>
-
-      {caricamento ? (
-        <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Carico…</Muted>
-      ) : (
-        <Classifica
-          righe={righeGeneriche} coloreValore={colors.gold} unitaValore=" vittorie"
-          vuoto={`Ancora nessuna coppia ${ETICHETTA_CATEGORIA_COPPIA[categoriaCoppia]} con abbastanza partite insieme per ${sportAttivo} qui — servono almeno 3 partite in doppio con lo stesso compagno.`}
-          colors={colors} s={s}
-        />
-      )}
-      <View style={{ height: 20 }} />
-      {coppiaSelezionata && centroId && (
-        <ModaleCoppia
-          coppia={coppiaSelezionata} centroId={centroId} sport={sportAttivo}
-          onChiudi={() => setCoppiaSelezionata(null)} colors={colors} s={s}
-        />
-      )}
-    </ScrollView>
-  );
-}
-
-// ============================================================
-// Profilo minimale di coppia (fix utente esplicito): entrambi i
-// giocatori — avatar, nome, cognome, nickname — più le statistiche di
-// coppia (partite insieme, vittorie, winrate) e il tasto "Sfida", che
-// sfida ENTRAMBI i giocatori della coppia insieme (riusa la sfida
-// individuale già esistente — creaSfida — inviata a testa: chi guarda
-// deve accettarle entrambe per completare la squadra avversaria, non
-// serve un nuovo protocollo lato backend per una sfida "a coppia").
-function ModaleCoppia({ coppia, centroId, sport, onChiudi, colors, s }: {
-  coppia: RigaClassificaCoppia; centroId: string; sport: string; onChiudi: () => void;
-  colors: AppColors; s: ReturnType<typeof makeStyles>;
-}) {
-  const { me, demoMode } = useAuth();
-  const { glass, scheme } = useTheme();
-  const [inviandoSfida, setInviandoSfida] = useState(false);
-  const eLaMiaCoppia = me && (me.id === coppia.giocatore1Id || me.id === coppia.giocatore2Id);
-
-  const sfidaCoppia = async () => {
-    if (!me) return;
-    setInviandoSfida(true);
-    const [r1, r2] = await Promise.all([
-      creaSfida({ mittenteId: me.id, destinatarioId: coppia.giocatore1Id, centroId, sport }),
-      creaSfida({ mittenteId: me.id, destinatarioId: coppia.giocatore2Id, centroId, sport }),
-    ]);
-    setInviandoSfida(false);
-    if (r1.ok && r2.ok) {
-      avvisa('Sfida inviata!', `${primoNome(coppia.nome1)} e ${primoNome(coppia.nome2)} riceveranno la tua sfida a ${sport} e potranno accettarla dai loro Impegni.${demoMode ? '\n\n(demo)' : ''}`);
-      onChiudi();
-    } else {
-      avvisa('Non è stato possibile inviare la sfida', r1.error ?? r2.error);
+  // Stessa logica "vedi subito la tua posizione" + tastino toggle della
+  // sezione Ranking (fix utente esplicito, stessa richiesta per Star del
+  // mese) — vedi i commenti lì per i dettagli.
+  const scrollRef = useRef<ScrollView>(null);
+  const mioY = useRef<number | null>(null);
+  const giaScrollato = useRef(false);
+  const [inCima, setInCima] = useState(false);
+  const [hoPosizione, setHoPosizione] = useState(false);
+  useEffect(() => { giaScrollato.current = false; mioY.current = null; setInCima(false); setHoPosizione(false); }, [righeGeneriche.length, sportAttivo, genere, centroId, meseOffset]);
+  const onMioLayout = useCallback((y: number) => {
+    mioY.current = y;
+    setHoPosizione(true);
+    if (!giaScrollato.current) {
+      giaScrollato.current = true;
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 90), animated: false });
     }
+  }, []);
+  const vaiInCima = () => { scrollRef.current?.scrollTo({ y: 0, animated: true }); setInCima(true); };
+  const vaiAllaMiaPosizione = () => {
+    if (mioY.current != null) scrollRef.current?.scrollTo({ y: Math.max(0, mioY.current - 90), animated: true });
+    setInCima(false);
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onChiudi}>
-      <Pressable style={s.modaleSfondo} onPress={onChiudi}>
-        <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
-          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
-
-          <View style={s.coppiaHead}>
-            <AvatarCoppia
-              nome1={coppia.nome1} nome2={coppia.nome2} genere1={coppia.genere1} genere2={coppia.genere2}
-              avatar1={coppia.avatar1} avatar2={coppia.avatar2} size={56}
-            />
-            <Text style={s.coppiaTitolo}>{primoNome(coppia.nome1)} & {primoNome(coppia.nome2)}</Text>
-          </View>
-
-          {/* Profilo minimale di ENTRAMBI: avatar proprio, nome+cognome,
-              nickname — non l'avatar a metà (quello è solo per riconoscere
-              la coppia a colpo d'occhio nella lista/podio). */}
-          <View style={{ gap: Spacing.sm, marginTop: Spacing.lg }}>
-            {[
-              { nome: coppia.nome1, cognome: coppia.cognome1, genere: coppia.genere1, avatar: coppia.avatar1, nickname: coppia.nickname1 },
-              { nome: coppia.nome2, cognome: coppia.cognome2, genere: coppia.genere2, avatar: coppia.avatar2, nickname: coppia.nickname2 },
-            ].map((g, i) => (
-              <View key={i} style={s.giocatoreRiga}>
-                <Avatar name={g.nome} size={40} uri={g.avatar} genere={g.genere} squircle />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.giocatoreNome} numberOfLines={1}>{g.nome}</Text>
-                  <Text style={s.giocatoreNick} numberOfLines={1}>{g.nickname ? `"${g.nickname}"` : 'Nessun nickname'}</Text>
-                </View>
-              </View>
+    <View style={{ flex: 1 }}>
+      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg }}>
+          <ScrollView
+            ref={meseScrollRef} horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: Spacing.lg, paddingLeft: Spacing.xxl }} style={{ flex: 1 }}
+            onContentSizeChange={(w) => {
+              larghezzaContenutoMesi.current = w;
+              if (meseOffset === 0) meseScrollRef.current?.scrollTo({ x: w, animated: false });
+            }}
+          >
+            {meseOffsetInverso.map((o) => (
+              <Pressable key={o} onPress={() => setMeseOffset(o)}>
+                <Text style={o === meseOffset ? s.meseGrande : s.meseMuted} numberOfLines={1}>{nomeMese(o)}</Text>
+              </Pressable>
             ))}
-          </View>
-
-          <View style={s.coppiaStats}>
-            <View style={s.coppiaStat}>
-              <Text style={s.coppiaStatValue}>{coppia.partiteInsieme}</Text>
-              <Muted>Partite insieme</Muted>
-            </View>
-            <View style={s.coppiaStat}>
-              <Text style={s.coppiaStatValue}>{coppia.vittorie}</Text>
-              <Muted>Vittorie</Muted>
-            </View>
-            <View style={s.coppiaStat}>
-              <Text style={[s.coppiaStatValue, { color: colors.gold }]}>{coppia.winRatePercento}%</Text>
-              <Muted>Win rate</Muted>
-            </View>
-          </View>
-
-          {!eLaMiaCoppia && (
-            <Pressable style={s.sfidaBtnCoppia} onPress={sfidaCoppia} disabled={inviandoSfida}>
-              <Ionicons name="flash" size={18} color={colors.navyDeep} />
-              <Text style={s.sfidaBtnCoppiaText}>{inviandoSfida ? 'Invio…' : 'Sfida'}</Text>
-            </Pressable>
+          </ScrollView>
+          {meseOffset !== 0 && (
+            <IconButton icon="today-outline" size={34} color={colors.gold} onPress={tornaAlMeseAttuale} style={{ marginLeft: Spacing.sm }} />
           )}
+        </View>
+
+        <Card style={s.filterCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: ricercaAperta ? Spacing.sm : Spacing.md }}>
+            <IconButton icon={soloPreferiti ? 'star' : 'star-outline'} size={36} color={soloPreferiti ? colors.gold : undefined} onPress={() => setSoloPreferiti((v) => !v)} />
+            <IconButton icon="search" size={36} color={ricercaAperta ? colors.gold : undefined} onPress={() => setRicercaAperta((v) => !v)} />
+            <Segmented
+              value={genere}
+              onChange={(v) => setGenere(v as Genere)}
+              options={[{ value: 'M', label: '🏆 Maschile' }, { value: 'F', label: '👑 Femminile' }]}
+              style={{ flex: 1 }}
+            />
+          </View>
+          {ricercaAperta && (
+            <Input
+              icon="search" placeholder="Cerca centro…" value={ricerca} onChangeText={setRicerca}
+              style={{ marginBottom: Spacing.md, height: 42 }} autoFocus
+            />
+          )}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm }}>
+            {centriFiltrati.length === 0 && <Muted>Nessun centro corrisponde ai filtri.</Muted>}
+            {centriFiltrati.map((c) => (
+              <Pressable key={c.id} style={[s.pillScelta, centroId === c.id && s.pillSceltaAttiva]} onPress={() => setCentroId(c.id)}>
+                <Text style={[s.pillSceltaText, centroId === c.id && s.pillSceltaTextAttiva]} numberOfLines={1}>{c.nome}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </Card>
+
+        {caricamento ? (
+          <Muted style={{ textAlign: 'center', marginTop: Spacing.xl }}>Carico…</Muted>
+        ) : (
+          <Classifica
+            righe={righeGeneriche} coloreValore={colors.gold} unitaValore=" pt" vuoto={`Nessun punteggio a ${nomeMese(meseOffset)} per ${sportAttivo}.`}
+            mioKey={me?.id} onMioLayout={onMioLayout} colors={colors} s={s}
+          />
+        )}
+        <View style={{ height: 20 }} />
+      </ScrollView>
+
+      {hoPosizione && !caricamento && (
+        // top spostato più in basso del solito (fix layout): qui sopra c'è
+        // anche la riga dei mesi, un tastino "a filo" la coprirebbe.
+        <Pressable style={[s.scrollToggleBtn, { top: 76 }]} onPress={inCima ? vaiAllaMiaPosizione : vaiInCima}>
+          <BlurView intensity={30} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.surface + 'CC' }]} />
+          <Ionicons name={inCima ? 'locate' : 'arrow-up'} size={16} color={colors.gold} />
         </Pressable>
-      </Pressable>
-    </Modal>
+      )}
+    </View>
   );
 }
 
 // ============================================================
-// Componenti condivisi: podio (1°/2°/3°) + lista, usati da tutte e 3 le
-// sezioni con dati diversi ma stesso linguaggio grafico.
+// Componenti condivisi: podio (1°/2°/3°) + lista, usati dalle 2 sezioni
+// con dati diversi ma stesso linguaggio grafico. `mioKey`/`onMioLayout`
+// (fix utente esplicito: "all'apertura deve vedersi la propria posizione
+// ed i dintorni") permettono al chiamante di sapere DOVE, in pixel, sta la
+// riga del giocatore loggato appena viene disegnata, per poterci scrollare
+// subito sopra — e di evidenziarla, non solo scrollarci.
 // ============================================================
 interface RigaGenerica {
   key: string; iniziali: string; genere?: Genere | null; titolo: string; sottotitolo: string; valore: string; onPress?: () => void;
-  // presente SOLO per le righe del RanDuo — l'avatar "a metà" (fix utente
-  // esplicito) sostituisce le iniziali/l'illustrazione singola quando c'è.
-  coppia?: RigaClassificaCoppia;
 }
 
-function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
+function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s, mioKey, onMioLayout }: {
   righe: RigaGenerica[]; coloreValore: string; unitaValore: string; vuoto: string;
   colors: AppColors; s: ReturnType<typeof makeStyles>;
+  mioKey?: string; onMioLayout?: (y: number) => void;
 }) {
   if (righe.length === 0) {
     return <Muted style={{ textAlign: 'center', marginTop: Spacing.xl, paddingHorizontal: Spacing.lg }}>{vuoto}</Muted>;
@@ -605,28 +508,32 @@ function Classifica({ righe, coloreValore, unitaValore, vuoto, colors, s }: {
     <>
       {primo && (
         <View style={s.podioRow}>
-          {secondo ? <PodioCol riga={secondo} posizione={2} colore={colors.slate} coloreValore={coloreValore} unitaValore={unitaValore} colors={colors} s={s} /> : <View style={{ flex: 1 }} />}
-          <PodioCol riga={primo} posizione={1} colore={colors.gold} coloreValore={coloreValore} unitaValore={unitaValore} colors={colors} s={s} />
-          {terzo ? <PodioCol riga={terzo} posizione={3} colore={BRONZO} coloreValore={coloreValore} unitaValore={unitaValore} colors={colors} s={s} /> : <View style={{ flex: 1 }} />}
+          {secondo ? <PodioCol riga={secondo} posizione={2} colore={colors.slate} coloreValore={coloreValore} unitaValore={unitaValore} mio={secondo.key === mioKey} colors={colors} s={s} /> : <View style={{ flex: 1 }} />}
+          <PodioCol riga={primo} posizione={1} colore={colors.gold} coloreValore={coloreValore} unitaValore={unitaValore} mio={primo.key === mioKey} colors={colors} s={s} />
+          {terzo ? <PodioCol riga={terzo} posizione={3} colore={BRONZO} coloreValore={coloreValore} unitaValore={unitaValore} mio={terzo.key === mioKey} colors={colors} s={s} /> : <View style={{ flex: 1 }} />}
         </View>
       )}
       <View style={{ gap: 2 }}>
-        {resto.map((r, i) => (
-          <Pressable key={r.key} onPress={r.onPress} disabled={!r.onPress} style={s.listaRiga}>
-            <Text style={s.listaPos}>{i + 4}</Text>
-            {r.coppia
-              ? <AvatarCoppia nome1={r.coppia.nome1} nome2={r.coppia.nome2} genere1={r.coppia.genere1} genere2={r.coppia.genere2} avatar1={r.coppia.avatar1} avatar2={r.coppia.avatar2} size={40} />
-              : <SquircleAvatar testo={r.iniziali} genere={r.genere} size={40} bg={colors.navyCard} colore={colors.navyDeep} mostraSfondo={false} />}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={s.listaNome} numberOfLines={1}>{r.titolo}</Text>
-              <Text style={s.listaSottotitolo} numberOfLines={1}>{r.sottotitolo}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={[s.listaValore, { color: coloreValore }]}>{r.valore}</Text>
-              {!!unitaValore && <Muted style={{ fontSize: Font.tiny }}>{unitaValore.trim().toUpperCase()}</Muted>}
-            </View>
-          </Pressable>
-        ))}
+        {resto.map((r, i) => {
+          const mio = r.key === mioKey;
+          return (
+            <Pressable
+              key={r.key} onPress={r.onPress} disabled={!r.onPress} style={[s.listaRiga, mio && s.listaRigaMia]}
+              onLayout={mio ? (e) => onMioLayout?.(e.nativeEvent.layout.y) : undefined}
+            >
+              <Text style={s.listaPos}>{i + 4}</Text>
+              <SquircleAvatar testo={r.iniziali} genere={r.genere} size={40} bg={colors.navyCard} colore={colors.navyDeep} mostraSfondo={false} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.listaNome} numberOfLines={1}>{r.titolo}</Text>
+                <Text style={s.listaSottotitolo} numberOfLines={1}>{r.sottotitolo}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[s.listaValore, { color: coloreValore }]}>{r.valore}</Text>
+                {!!unitaValore && <Muted style={{ fontSize: Font.tiny }}>{unitaValore.trim().toUpperCase()}</Muted>}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </>
   );
@@ -636,16 +543,14 @@ const BRONZO = '#C17F4A';
 const MEDAGLIE: Record<1 | 2 | 3, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const BASI: Record<1 | 2 | 3, number> = { 1: 92, 2: 66, 3: 52 };
 
-function PodioCol({ riga, posizione, colore, coloreValore, unitaValore, colors, s }: {
-  riga: RigaGenerica; posizione: 1 | 2 | 3; colore: string; coloreValore: string; unitaValore: string;
+function PodioCol({ riga, posizione, colore, coloreValore, unitaValore, mio, colors, s }: {
+  riga: RigaGenerica; posizione: 1 | 2 | 3; colore: string; coloreValore: string; unitaValore: string; mio?: boolean;
   colors: AppColors; s: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <Pressable onPress={riga.onPress} disabled={!riga.onPress} style={s.podioCol}>
+    <Pressable onPress={riga.onPress} disabled={!riga.onPress} style={[s.podioCol, mio && s.podioColMio]}>
       <Text style={s.podioMedaglia}>{MEDAGLIE[posizione]}</Text>
-      {riga.coppia
-        ? <AvatarCoppia nome1={riga.coppia.nome1} nome2={riga.coppia.nome2} genere1={riga.coppia.genere1} genere2={riga.coppia.genere2} avatar1={riga.coppia.avatar1} avatar2={riga.coppia.avatar2} size={posizione === 1 ? 68 : 56} />
-        : <SquircleAvatar testo={riga.iniziali} genere={riga.genere} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />}
+      <SquircleAvatar testo={riga.iniziali} genere={riga.genere} size={posizione === 1 ? 68 : 56} bg={colore} colore={posizione === 1 ? colors.navyDeep : colors.white} />
       <Text style={s.podioNome} numberOfLines={1}>{riga.titolo}</Text>
       <Text style={[s.podioValore, { color: coloreValore }]} numberOfLines={1}>{riga.valore}{unitaValore}</Text>
       <Text style={s.podioSub} numberOfLines={1}>{riga.sottotitolo}</Text>
@@ -702,16 +607,6 @@ function meseId(offset: number): string {
 }
 function nomeMese(offset: number): string { return cap(dataMese(offset).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })); }
 
-// RanDuo, fix utente esplicito: 3 categorie separate (non un unico elenco
-// misto) — Maschile/Femminile solo se ENTRAMBI i giocatori della coppia
-// sono dello stesso genere, altrimenti (incluso genere sconosciuto) Misto.
-type CategoriaCoppia = 'M' | 'F' | 'X';
-const ETICHETTA_CATEGORIA_COPPIA: Record<CategoriaCoppia, string> = { M: 'maschile', F: 'femminile', X: 'mista' };
-function categoriaCoppiaDi(r: RigaClassificaCoppia): CategoriaCoppia {
-  if (r.genere1 && r.genere2 && r.genere1 === r.genere2) return r.genere1;
-  return 'X';
-}
-
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
@@ -725,6 +620,11 @@ function makeStyles(colors: AppColors) {
     // Podio: 3 colonne (2°/1°/3° nell'ordine visivo classico).
     podioRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm, marginBottom: Spacing.xl },
     podioCol: { flex: 1, alignItems: 'center' },
+    // Evidenzia la colonna/riga del giocatore loggato (fix utente esplicito:
+    // "all'apertura deve vedersi la propria posizione") — bordo oro sottile,
+    // stesso linguaggio del resto (niente sfondo pieno, che sul podio
+    // coprirebbe il colore oro/argento/bronzo che indica la posizione).
+    podioColMio: { borderWidth: 1.5, borderColor: colors.gold, borderRadius: Radius.md, paddingTop: 4, marginTop: -4 },
     podioMedaglia: { fontSize: 24, marginBottom: 2 },
     podioNome: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small, marginTop: Spacing.sm, textAlign: 'center', maxWidth: '100%' },
     podioValore: { fontWeight: '900', fontSize: Font.h3, marginTop: 2 },
@@ -733,10 +633,20 @@ function makeStyles(colors: AppColors) {
     podioBaseNum: { fontSize: 32, fontWeight: '900', opacity: 0.55 },
 
     listaRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.navyLine + '18' },
+    listaRigaMia: { backgroundColor: colors.gold + '14', borderRadius: Radius.sm, paddingHorizontal: Spacing.sm, marginHorizontal: -Spacing.sm },
     listaPos: { color: colors.slate, fontWeight: '800', fontSize: Font.body, width: 20, textAlign: 'center' },
     listaNome: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
     listaSottotitolo: { color: colors.slate, fontSize: Font.small },
     listaValore: { fontWeight: '900', fontSize: Font.h3 },
+
+    // Tastino "torna in cima"/"torna alla mia posizione" (fix utente
+    // esplicito) — flottante in alto a sinistra dell'area classifica, stesso
+    // linguaggio del "torna al ranking" della Home (blur + bordo sottile).
+    scrollToggleBtn: {
+      position: 'absolute', top: Spacing.sm, left: Spacing.sm, zIndex: 10,
+      width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden', borderWidth: 1, borderColor: colors.navyLine + '33',
+    } as any,
 
     // Modale filtri (stesso linguaggio di ConfiguraWidgetModal in HomeCarousel).
     modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
@@ -753,23 +663,5 @@ function makeStyles(colors: AppColors) {
     btnGhostText: { color: colors.slateLight, fontWeight: '700' },
     btnPieno: { flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.control, alignItems: 'center', backgroundColor: colors.gold },
     btnPienoText: { color: colors.navyDeep, fontWeight: '800' },
-
-    // Profilo minimale di coppia (fix utente esplicito).
-    coppiaHead: { alignItems: 'center', gap: Spacing.sm },
-    coppiaTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, textAlign: 'center' },
-    giocatoreRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    giocatoreNome: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.body },
-    giocatoreNick: { color: colors.slate, fontStyle: 'italic', fontSize: Font.small },
-    coppiaStats: {
-      flexDirection: 'row', marginTop: Spacing.lg, paddingTop: Spacing.md,
-      borderTopWidth: 1, borderTopColor: colors.navyLine + '33',
-    },
-    coppiaStat: { flex: 1, alignItems: 'center', gap: 2 },
-    coppiaStatValue: { color: colors.navyDeep, fontWeight: '900', fontSize: Font.h3 },
-    sfidaBtnCoppia: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
-      backgroundColor: colors.gold, borderRadius: Radius.pill, paddingVertical: Spacing.md, marginTop: Spacing.lg,
-    },
-    sfidaBtnCoppiaText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.body },
   });
 }
