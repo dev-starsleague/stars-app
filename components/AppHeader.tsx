@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { SquircleView } from 'react-native-figma-squircle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,6 +11,8 @@ import { useTheme } from '../lib/theme';
 import { useSport } from '../lib/sport';
 import { getPartiteGiocatore } from '../lib/api';
 import { serveRisultato, servePagamento } from '../lib/impegni';
+import { iconaSport } from '../lib/stars';
+import { Avatar } from './ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../constants/theme';
 import type { Prenotazione } from '../types/models';
 
@@ -47,7 +49,6 @@ export function AppHeader() {
   const { colors, glass, scheme, toggleTheme } = useTheme();
   const { sportAttivo, setSportAttivo, sportDisponibili } = useSport();
   const s = useMemo(() => makeStyles(colors, glass), [colors, glass]);
-  const iniziale = (me?.nome?.[0] ?? 'P').toUpperCase();
 
   const [sportModaleAperto, setSportModaleAperto] = useState(false);
   const [notificheAperte, setNotificheAperte] = useState(false);
@@ -105,9 +106,8 @@ export function AppHeader() {
           <Ionicons name={scheme === 'dark' ? 'sunny' : 'moon'} size={18} color={colors.gold} />
         </Pressable>
         <Pressable onPress={() => setSportModaleAperto(true)} style={s.sportPill}>
-          <BlurView intensity={glass.blur} tint={scheme} style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.regularBg }]} />
-          <Ionicons name="tennisball-outline" size={15} color={colors.navyDeep} />
+          <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: glass.regularBg, strokeColor: glass.regularBorder, strokeWidth: 1 }} />
+          <MaterialCommunityIcons name={iconaSport(sportAttivo) as any} size={16} color={colors.navyDeep} />
           <Text style={s.sportPillText}>{sportAttivo}</Text>
           <Ionicons name="chevron-down" size={13} color={colors.slate} />
         </Pressable>
@@ -118,9 +118,8 @@ export function AppHeader() {
           <Ionicons name="notifications-outline" size={20} color={colors.slateLight} />
           {notificheNonLette.length > 0 && <View style={[s.badge, { backgroundColor: colors.gold }]}><Text style={[s.badgeText, { color: colors.navyDeep }]}>{notificheNonLette.length}</Text></View>}
         </Pressable>
-        <Pressable style={s.avatar} onPress={() => router.push('/(tabs)/profilo')}>
-          <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: colors.gold }} />
-          <Text style={[s.avatarText, { color: colors.navyDeep }]}>{iniziale}</Text>
+        <Pressable onPress={() => router.push('/(tabs)/profilo')}>
+          <Avatar name={me?.nome ?? 'Player'} uri={me?.avatar_url} genere={me?.genere} size={40} squircle gold />
         </Pressable>
       </View>
 
@@ -134,6 +133,7 @@ export function AppHeader() {
             {sportDisponibili.map((sp) => (
               <Pressable key={sp} style={s.modaleRiga} onPress={() => { setSportAttivo(sp); setSportModaleAperto(false); }}>
                 <Ionicons name={sp === sportAttivo ? 'radio-button-on' : 'radio-button-off'} size={20} color={sp === sportAttivo ? colors.gold : colors.slate} />
+                <MaterialCommunityIcons name={iconaSport(sp) as any} size={18} color={sp === sportAttivo ? colors.gold : colors.slate} />
                 <Text style={s.modaleRigaText}>{sp}</Text>
               </Pressable>
             ))}
@@ -171,14 +171,12 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
     left: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-    sportPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 8, overflow: 'hidden' },
+    sportPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: Radius.control, paddingHorizontal: Spacing.md, paddingVertical: 8, overflow: 'hidden' },
     sportPillText: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.small },
     right: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     bell: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     badge: { position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
     badgeText: { fontSize: 10, fontWeight: '900' },
-    avatar: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-    avatarText: { fontWeight: '900', fontSize: Font.body },
     modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
     modaleBox: { width: '100%', maxWidth: 320, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: glass.regularBorder },
     modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },

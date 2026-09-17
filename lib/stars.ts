@@ -60,8 +60,29 @@ export const FASCE_ORDINATE: Fascia[] = ['Spark', '1★', '2★', '3★', '4★'
 
 // Elenco sport della piattaforma — unica fonte (prima duplicato localmente
 // in modifica-profilo.tsx), usato anche dal selettore sport nell'header
-// (vedi lib/sport.tsx).
-export const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis'];
+// (vedi lib/sport.tsx). Allineato allo stesso elenco di 7 sport del
+// gestionale (stars-system/src/lib/sport.js SPORT_DISPONIBILI) — prima qui
+// mancavano Calcio/Beach Volley/Basket (fix: le due app non condividono
+// codice, l'elenco va tenuto sincronizzato a mano).
+export const SPORT_DISPONIBILI = ['Padel', 'Tennis', 'Pickleball', 'Beach Tennis', 'Calcio', 'Beach Volley', 'Basket'];
+
+// Icona (MaterialCommunityIcons) per sport, mostrata nel pill/tendina
+// dell'header (fix utente esplicito: "mettere le racchette di gioco" per
+// gli sport con racchetta, il pallone specifico per gli altri) — 'tennis'
+// in MaterialCommunityIcons è il disegno di due racchette incrociate
+// (distinto da 'tennis-ball', la sola pallina).
+export const SPORT_ICONA: Record<string, string> = {
+  Padel: 'tennis',
+  Tennis: 'tennis',
+  Pickleball: 'tennis',
+  'Beach Tennis': 'tennis',
+  Calcio: 'soccer',
+  'Beach Volley': 'volleyball',
+  Basket: 'basketball',
+};
+export function iconaSport(sport: string): string {
+  return SPORT_ICONA[sport] ?? 'tennis';
+}
 
 // Sport individuali: niente doppio, quindi niente classifica di coppia
 // "RanDuo" (fix utente esplicito, tab Classifiche: "per il Tennis e gli

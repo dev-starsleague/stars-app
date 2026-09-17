@@ -3,14 +3,17 @@ import { View, Text, StyleSheet, ScrollView, Pressable, KeyboardAvoidingView, Pl
 import { useRouter, Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
-import { Button, Muted } from '../../components/ui';
+import { useSport } from '../../lib/sport';
+import { Button, Muted, Chip } from '../../components/ui';
 import { Field } from './login';
 import { useTheme } from '../../lib/theme';
 import { Spacing, Font, AppColors } from '../../constants/theme';
+import { SPORT_DISPONIBILI } from '../../lib/stars';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function Register() {
   const { signUp } = useAuth();
+  const { setSportAttivo } = useSport();
   const router = useRouter();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -18,6 +21,7 @@ export default function Register() {
   const [cognome, setCognome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [sport, setSport] = useState(SPORT_DISPONIBILI[0]);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +34,13 @@ export default function Register() {
     const { error } = await signUp(email.trim(), password, nome.trim(), cognome.trim());
     setLoading(false);
     if (error) setErr(error);
-    else router.replace('/(tabs)');
+    else {
+      // Lo sport scelto qui diventa lo sport attivo di default dell'app
+      // (fix utente esplicito) — stesso meccanismo usato dal selettore
+      // nell'header (vedi lib/sport.tsx), solo impostato in anticipo.
+      setSportAttivo(sport);
+      router.replace('/(tabs)');
+    }
   };
 
   return (
@@ -48,6 +58,13 @@ export default function Register() {
           <Field icon="person" placeholder="Cognome" value={cognome} onChangeText={setCognome} />
           <Field icon="mail" placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
           <Field icon="lock-closed" placeholder="Password (min 6)" value={password} onChangeText={setPassword} secureTextEntry />
+
+          <Muted style={{ marginBottom: Spacing.sm }}>Che sport giochi?</Muted>
+          <View style={s.chips}>
+            {SPORT_DISPONIBILI.map((sp) => (
+              <Chip key={sp} label={sp} active={sport === sp} onPress={() => setSport(sp)} />
+            ))}
+          </View>
 
           {err ? <Text style={s.err}>{err}</Text> : null}
           <Button title="Registrati" onPress={onRegister} loading={loading} style={{ marginTop: Spacing.md }} />
@@ -72,6 +89,7 @@ function makeStyles(colors: AppColors) {
     back: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg },
     backText: { color: colors.slateLight, fontSize: Font.body },
     title: { color: colors.navyDeep, fontSize: Font.h1, fontWeight: '800' },
+    chips: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap', marginBottom: Spacing.md },
     err: { color: colors.red, marginTop: Spacing.sm, fontSize: Font.small },
     row: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.xl },
     link: { color: colors.gold, fontWeight: '700' },
