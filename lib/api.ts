@@ -543,8 +543,14 @@ export async function getPartiteGiocatore(giocatoreId: string): Promise<Prenotaz
   if (isMock()) return mock.mockPrenotazioni();
   // Nessun filtro centro_id qui: un giocatore può aver giocato in centri
   // diversi (era un bug, non una scelta — filtrava sempre sul centro demo).
+  // Filtro giocatore_id lato backend (fix perf: prima scaricava l'INTERA
+  // tabella prenotazioni — fino a 21MB per ~10 righe reali di un
+  // giocatore — e filtrava qui sotto; vedi _generic.py per il supporto
+  // "ne fa parte" su giocatori_extra, non un'uguaglianza esatta). Il
+  // filtro client sotto resta com'era, ora è solo una rete di sicurezza
+  // economica su un array già piccolo, non il filtro vero.
   const [{ data: rows }, { data: campi }] = await Promise.all([
-    apiGet<Prenotazione[]>('/prenotazioni'),
+    apiGet<Prenotazione[]>('/prenotazioni', { giocatore_id: giocatoreId }),
     apiGet<Campo[]>('/campi'),
   ]);
   const campoById = new Map((campi ?? []).map((c) => [c.id, c]));
@@ -1052,8 +1058,11 @@ export async function getClassificaRanking(sport: string, genere: Genere, filtro
  *  ATTUALE e "annullando" i delta di partite/correzioni avvenute dentro la
  *  finestra (stessa aritmetica di getStoricoRanking, applicata all'intera
  *  popolazione invece che a un solo giocatore — /match-ranking e
- *  /ranking-override non filtrati per giocatore restituiscono già tutto il
- *  necessario in una sola chiamata ciascuno). Se il giocatore stesso non ha
+ *  /ranking-override filtrati con data_da=cutoff, non per giocatore,
+ *  restituiscono i delta "dopo" di tutti in una sola chiamata ciascuno; due
+ *  chiamate leggere in più, filtrate anche per giocatore_id e limitate a
+ *  data_a=cutoff, servono solo a sapere se ero già attivo PRIMA — fix
+ *  perf, vedi backend _generic.py). Se il giocatore stesso non ha
  *  nessuna attività PRIMA del cutoff, la sua posizione "di N giorni fa" non
  *  è mai esistita: si ritorna comunque la posizione attuale, ma con
  *  posizionePrecedente=null (mai una variazione inventata). */
@@ -1066,35 +1075,38 @@ export async function getVariazioneRankingGlobale(giocatoreId: string, sport: st
   cutoff.setDate(cutoff.getDate() - giorni);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
-  const [righe, { data: matches }, { data: overrides }] = await Promise.all([
+  // 2 chiamate + 2 leggere (fix perf: prima /match-ranking?sport= da solo
+  // scaricava TUTTO lo storico dello sport — fino a 9MB — per ricostruire
+  // 30 giorni di variazione). data_da limita le prime due a "dopo il
+  // cutoff", su TUTTI i giocatori (necessario: la posizione è relativa,
+  // serve il delta di ognuno, non solo il mio, vedi sopra). Le altre due,
+  // filtrate anche per giocatore_id, servono solo a stabilire se ERO già
+  // attivo prima del cutoff — righe poche, bounded anche loro con data_a
+  // così non riscaricano la mia intera carriera.
+  const [righe, { data: matchesDopoCutoff }, { data: overridesDopoCutoff }, { data: miaAttivitaPrimaMatch }, { data: miaAttivitaPrimaOverride }] = await Promise.all([
     getRanking(sport),
-    apiGet<MatchRanking[]>('/match-ranking', { sport }),
-    apiGet<RankingOverride[]>('/ranking-override', { sport }),
+    apiGet<MatchRanking[]>('/match-ranking', { sport, data_da: cutoffIso }),
+    apiGet<RankingOverride[]>('/ranking-override', { sport, data_da: cutoffIso }),
+    apiGet<MatchRanking[]>('/match-ranking', { sport, giocatore_id: giocatoreId, data_a: cutoffIso }),
+    apiGet<RankingOverride[]>('/ranking-override', { giocatore_id: giocatoreId, data_a: cutoffIso }),
   ]);
   const io = righe.find((r) => r.giocatore_id === giocatoreId);
   if (!io?.giocatore?.genere) return null;
 
-  const deltaDopoCutoff = new Map<string, number>();
-  const aggiungiDelta = (id: string, delta: number) => deltaDopoCutoff.set(id, (deltaDopoCutoff.get(id) ?? 0) + delta);
-  let ioAttivoPrimaDelCutoff = false;
-  for (const m of matches ?? []) {
-    const coinvolti: [string, number][] = [[m.a1_id, m.a1_delta], [m.a2_id, m.a2_delta], [m.b1_id, m.b1_delta], [m.b2_id, m.b2_delta]];
-    if (m.data < cutoffIso) {
-      if (coinvolti.some(([id]) => id === giocatoreId)) ioAttivoPrimaDelCutoff = true;
-      continue;
-    }
-    for (const [id, delta] of coinvolti) aggiungiDelta(id, delta);
-  }
-  for (const o of overrides ?? []) {
-    const dataIso = o.data.slice(0, 10);
-    if (dataIso < cutoffIso) {
-      if (o.giocatore_id === giocatoreId) ioAttivoPrimaDelCutoff = true;
-      continue;
-    }
-    aggiungiDelta(o.giocatore_id, Number(o.ranking_post) - Number(o.ranking_pre));
-  }
+  const ioAttivoPrimaDelCutoff = (miaAttivitaPrimaMatch?.length ?? 0) > 0 || (miaAttivitaPrimaOverride?.length ?? 0) > 0;
   if (!ioAttivoPrimaDelCutoff) {
     return { posizioneAttuale: attuale.posizione, totale: attuale.totale, posizionePrecedente: null, giorni };
+  }
+
+  const deltaDopoCutoff = new Map<string, number>();
+  const aggiungiDelta = (id: string, delta: number) => deltaDopoCutoff.set(id, (deltaDopoCutoff.get(id) ?? 0) + delta);
+  for (const m of matchesDopoCutoff ?? []) {
+    for (const [id, delta] of [[m.a1_id, m.a1_delta], [m.a2_id, m.a2_delta], [m.b1_id, m.b1_delta], [m.b2_id, m.b2_delta]] as [string, number][]) {
+      aggiungiDelta(id, delta);
+    }
+  }
+  for (const o of overridesDopoCutoff ?? []) {
+    aggiungiDelta(o.giocatore_id, Number(o.ranking_post) - Number(o.ranking_pre));
   }
 
   const pari = righe.filter((r) => r.giocatore?.genere === io.giocatore!.genere);
