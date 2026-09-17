@@ -671,16 +671,19 @@ const MIN_PARTITE_INSIEME = 3;
 // ordine posizionale in giocatori_extra), applicata a ogni singolo set
 // invece che solo all'esito finale. null se la partita non ha set
 // registrati (es. solo il vincitore, senza punteggio).
-function setVintiPersiPartita(p: Prenotazione, giocatoreId: string): { vinti: number; persi: number } | null {
+// Game totali (non i set vinti: la somma dei game fatti/subiti in ogni set,
+// es. un 6-4 vale 6 game vinti e 4 persi, non "1 set vinto") — fix utente
+// esplicito, slide 2 dell'Home: "Set vinti/persi" sostituito da "Game
+// vinti/persi".
+function gameVintiPersiPartita(p: Prenotazione, giocatoreId: string): { vinti: number; persi: number } | null {
   if (!p.risultato?.sets?.length) return null;
   const meta = Math.ceil(p.giocatori_extra.length / 2);
   const squadraA = p.squadre?.a ?? p.giocatori_extra.slice(0, meta);
   const inA = squadraA.includes(giocatoreId);
   let vinti = 0, persi = 0;
   for (const set of p.risultato.sets) {
-    const miei = inA ? set.a : set.b;
-    const avv = inA ? set.b : set.a;
-    if (miei > avv) vinti++; else if (avv > miei) persi++;
+    vinti += inA ? set.a : set.b;
+    persi += inA ? set.b : set.a;
   }
   return { vinti, persi };
 }
@@ -691,7 +694,7 @@ function setVintiPersiPartita(p: Prenotazione, giocatoreId: string): { vinti: nu
  *  ne ha ancora giocate abbastanza: il chiamante mostra un messaggio
  *  contestuale quando disputate===0, mai "0 partite"/"0%". */
 export async function getAndamentoRecente(giocatoreId: string, sport: string, finestra: number = 10): Promise<AndamentoRecente> {
-  const vuoto: AndamentoRecente = { finestra, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], setVinti: 0, setPersi: 0, trend: null };
+  const vuoto: AndamentoRecente = { finestra, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], gameVinti: 0, gamePersi: 0, trend: null };
   if (isMock()) return vuoto;
   const partite = await getPartiteGiocatore(giocatoreId); // già ordinate dal più recente
   const rilevanti = partite.filter((p) => p.tipo !== 'lezione' && p.campo?.sport === sport && p.risultato?.vincitore);
@@ -714,10 +717,10 @@ export async function getAndamentoRecente(giocatoreId: string, sport: string, fi
   while (streakCount < esiti.length && esiti[streakCount] === esiti[0]) streakCount++;
   const streak = streakCount >= 2 ? { tipo: esiti[0] ? ('vittorie' as const) : ('sconfitte' as const), conteggio: streakCount } : null;
 
-  let setVinti = 0, setPersi = 0;
+  let gameVinti = 0, gamePersi = 0;
   for (const p of finestraPartite) {
-    const esitoSet = setVintiPersiPartita(p, giocatoreId);
-    if (esitoSet) { setVinti += esitoSet.vinti; setPersi += esitoSet.persi; }
+    const esitoGame = gameVintiPersiPartita(p, giocatoreId);
+    if (esitoGame) { gameVinti += esitoGame.vinti; gamePersi += esitoGame.persi; }
   }
 
   // Andamento (fix utente esplicito): confronta la % di vittorie tra le 5
@@ -736,7 +739,7 @@ export async function getAndamentoRecente(giocatoreId: string, sport: string, fi
 
   return {
     finestra, disputate, vinte, perse: disputate - vinte, winRatePercento: Math.round((vinte / disputate) * 100), streak,
-    formaRecente: esiti.slice(0, 10), setVinti, setPersi, trend,
+    formaRecente: esiti.slice(0, 10), gameVinti, gamePersi, trend,
   };
 }
 

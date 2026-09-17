@@ -382,10 +382,11 @@ export interface AndamentoRecente {
   // fino a 10, per il "form guide" della slide 2 (fix utente esplicito:
   // pallini 🟢/🔴 dalla meno recente alla più recente).
   formaRecente: boolean[];
-  // Set vinti/persi nelle stesse partite considerate sopra (fix utente
-  // esplicito: "Set vinti"/"Set persi" al posto di "Punti fatti/subiti").
-  setVinti: number;
-  setPersi: number;
+  // Game vinti/persi (somma dei game di ogni set, non i set vinti) nelle
+  // stesse partite considerate sopra (fix utente esplicito: "Game vinti"/
+  // "Game persi" al posto di "Set vinti"/"Set persi").
+  gameVinti: number;
+  gamePersi: number;
   // Andamento: confronta la percentuale di vittorie tra le 5 partite più
   // vecchie e le 5 più recenti (delle ultime 10) — null se ci sono troppo
   // poche partite per un confronto sensato (fix utente esplicito).

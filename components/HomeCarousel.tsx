@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Image, Modal, useWindowDimensions,
-  NativeSyntheticEvent, NativeScrollEvent, AccessibilityInfo,
+  NativeSyntheticEvent, NativeScrollEvent, AccessibilityInfo, Animated, Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
@@ -35,7 +35,7 @@ const AUTOPLAY_MS = 4500;
 // "sto ancora caricando" da "ho caricato e non ci sono abbastanza dati" nelle
 // slide — in entrambi i casi si mostra lo stesso messaggio contestuale
 // elegante, mai "0 partite"/"0%" (fix utente esplicito).
-const ANDAMENTO_VUOTO: AndamentoRecente = { finestra: 10, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], setVinti: 0, setPersi: 0, trend: null };
+const ANDAMENTO_VUOTO: AndamentoRecente = { finestra: 10, disputate: 0, vinte: 0, perse: 0, winRatePercento: null, streak: null, formaRecente: [], gameVinti: 0, gamePersi: 0, trend: null };
 const INSIGHTS_VUOTI: InsightsSociali = { compagnoPreferito: null, nemesi: null, avversarioPreferito: null };
 
 // `prefers-reduced-motion` (fix utente esplicito): niente autoplay né salti
@@ -230,21 +230,13 @@ export function HomeCarousel() {
   // ============================================================
   const slide: { key: string; node: React.ReactNode }[] = [
     { key: 'ranking', node: (
-      <RankingSlide globale={globale} variazione={variazione} sportAttivo={sportAttivo} esiti={esiti}
+      <RankingSlide globale={globale} variazione={variazione} esiti={esiti}
         onConfiguraSlot={setSlotConfigurando} colors={colors} s={s} />
     ) },
     { key: 'andamento', node: <AndamentoSlide andamento={andamento} prossimaPartita={prossimaPartita} colors={colors} s={s} /> },
     ...eventiADV.map((e) => ({
       key: `ev-${e.id}`,
-      node: (
-        <Pressable onPress={apriEvento} style={s.advCard}>
-          {e.immagine_url && <Image source={{ uri: e.immagine_url.startsWith('http') ? e.immagine_url : apiUrl(e.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />}
-          <View style={[StyleSheet.absoluteFillObject, s.advOverlay]} />
-          <View style={s.advBadge}><Text style={s.advBadgeText}>EVENTO</Text></View>
-          <Text style={s.advTitle} numberOfLines={2}>{e.nome}</Text>
-          {e.descrizione && <Text style={s.advSubChiaro} numberOfLines={1}>{e.descrizione}</Text>}
-        </Pressable>
-      ),
+      node: <EventoTicketCard evento={e} onApri={apriEvento} s={s} colors={colors} />,
     })),
     // Un centro con più prodotti sponsorizzati compare in UNA sola scheda
     // con tutti insieme, non una ripetuta per prodotto (fix utente
@@ -456,8 +448,8 @@ export function HomeCarousel() {
 }
 
 // ---------- Slide 1: ranking globale + variazione 30gg + 2 widget ----------
-function RankingSlide({ globale, variazione, sportAttivo, esiti, onConfiguraSlot, colors, s }: {
-  globale: EsitoWidget | null; variazione: VariazioneRanking | null; sportAttivo: string;
+function RankingSlide({ globale, variazione, esiti, onConfiguraSlot, colors, s }: {
+  globale: EsitoWidget | null; variazione: VariazioneRanking | null;
   esiti: [EsitoWidget | null, EsitoWidget | null]; onConfiguraSlot: (i: 0 | 1) => void;
   colors: AppColors; s: ReturnType<typeof makeStyles>;
 }) {
@@ -466,10 +458,17 @@ function RankingSlide({ globale, variazione, sportAttivo, esiti, onConfiguraSlot
   // bassa = meglio), quindi il segno da mostrare è invertito rispetto alla
   // differenza numerica grezza tra le due posizioni.
   const delta = variazione?.posizionePrecedente != null ? variazione.posizionePrecedente - variazione.posizioneAttuale : null;
+  // Striscia di almeno 5 posizioni in 30gg (fix utente esplicito): fiammella
+  // per una risalita, ghiaccio/fiocco di neve per un crollo — altrimenti la
+  // coppa di sempre. Colore coerente col significato (caldo/freddo), non col
+  // solito oro di default.
+  const iconaPosizione: React.ComponentProps<typeof Ionicons>['name'] =
+    delta != null && delta >= 5 ? 'flame' : delta != null && delta <= -5 ? 'snow' : 'trophy';
+  const coloreIconaPosizione = iconaPosizione === 'flame' ? colors.gold : iconaPosizione === 'snow' ? '#38BDF8' : colors.gold;
   return (
     <View style={s.card1}>
       <View style={s.globaleBox}>
-        <Ionicons name="trophy" size={18} color={colors.gold} style={{ marginBottom: 2 }} />
+        <Ionicons name={iconaPosizione} size={18} color={coloreIconaPosizione} style={{ marginBottom: 2 }} />
         <Text style={s.globaleNum}>{globale?.posizione ? `#${globale.posizione}` : '—'}</Text>
         <Muted style={{ fontSize: Font.small, textAlign: 'center' }}>
           {globale?.totale ? `su ${globale.totale}${delta === null ? ' giocatori' : ''}` : 'non ancora in classifica'}
@@ -479,7 +478,7 @@ function RankingSlide({ globale, variazione, sportAttivo, esiti, onConfiguraSlot
             </Text>
           )}
         </Muted>
-        <Text style={s.globaleLabel}>Ranking nazionale · {sportAttivo}</Text>
+        <Text style={s.globaleLabel}>La tua posizione globale</Text>
       </View>
       <View style={s.divider} />
       <View style={s.miniColonna}>
@@ -522,20 +521,11 @@ function AndamentoSlide({ andamento, prossimaPartita, colors, s }: {
     <View style={[s.card1, { flexDirection: 'column' }]}>
       <View style={{ flex: 1, flexDirection: 'row' }}>
         <View style={[s.globaleBox, { gap: 5 }]}>
-          <Ionicons name="pulse" size={18} color={colors.gold} />
           <View style={{ alignItems: 'center', gap: 1 }}>
             <Text style={s.globaleNum}>{andamento.winRatePercento}%</Text>
             <Muted style={{ fontSize: Font.small, textAlign: 'center' }}>win rate</Muted>
           </View>
           <Text style={s.globaleLabel}>Ultime {andamento.disputate} partite</Text>
-          {andamento.streak && (
-            <View style={s.streakChip}>
-              <Ionicons name="flame" size={12} color={andamento.streak.tipo === 'vittorie' ? colors.gold : colors.slate} />
-              <Text style={[s.streakChipTesto, andamento.streak.tipo !== 'vittorie' && { color: colors.slate }]} numberOfLines={1}>
-                {andamento.streak.conteggio} {andamento.streak.tipo}
-              </Text>
-            </View>
-          )}
         </View>
         <View style={s.divider} />
         <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
@@ -557,12 +547,12 @@ function AndamentoSlide({ andamento, prossimaPartita, colors, s }: {
             <View style={s.andamentoDividerOriz} />
             <View style={[s.andamentoStatsRow, { marginTop: 7 }]}>
               <View style={[s.andamentoStatTile, { flex: 0.8 }]}>
-                <Text style={s.andamentoStatLabel}>Set vinti</Text>
-                <Text style={[s.andamentoStatValore, { color: colors.green }]}>{andamento.setVinti}</Text>
+                <Text style={s.andamentoStatLabel}>Game vinti</Text>
+                <Text style={[s.andamentoStatValore, { color: colors.green }]}>{andamento.gameVinti}</Text>
               </View>
               <View style={[s.andamentoStatTile, { flex: 0.8 }]}>
-                <Text style={s.andamentoStatLabel}>Set persi</Text>
-                <Text style={[s.andamentoStatValore, { color: colors.red }]}>{andamento.setPersi}</Text>
+                <Text style={s.andamentoStatLabel}>Game persi</Text>
+                <Text style={[s.andamentoStatValore, { color: colors.red }]}>{andamento.gamePersi}</Text>
               </View>
               <View style={[s.andamentoStatTile, { flex: 1.3 }]}>
                 <Text style={s.andamentoStatLabel}>Forma</Text>
@@ -770,6 +760,99 @@ const miniStyles = StyleSheet.create({
   valore: { fontSize: Font.h2, fontWeight: '900' },
 });
 
+// Scheda ADV evento: disegnata come un vero ticket da spettacolo (fix
+// utente esplicito) — sfondo arancione (colors.gold, stessa tinta già
+// usata per i badge ADV su sfondo scuro altrove in questo file), corpo +
+// matrice strappabile separati da una linea tratteggiata con due
+// "punzonature" semicircolari (i due cerchietti color pagina piazzati
+// esattamente sul bordo del ticket: la metà che sporge fuori dalla card
+// viene tagliata dall'overflow:hidden della card stessa, lasciando SOLO il
+// semicerchio interno — stesso trucco usato per i biglietti veri). Il tap
+// sulla sola matrice anima uno "strappo" (rotazione + scorrimento +
+// dissolvenza) e poi apre l'evento; il tap sul resto della card apre
+// l'evento subito, come le altre schede ADV.
+function EventoTicketCard({ evento, onApri, s, colors }: {
+  evento: EventoCustom; onApri: () => void; s: ReturnType<typeof makeStyles>; colors: AppColors;
+}) {
+  const strappo = useRef(new Animated.Value(0)).current;
+  const strappandoRef = useRef(false);
+  // Vero guard anti-doppio-tap (fix bug reale, 2° tentativo): su web il tap
+  // sulla matrice annidata risale comunque alla Pressable esterna anche con
+  // stopPropagation (il gesture responder di react-native-web non è la
+  // stessa cosa del bubbling DOM che stopPropagation ferma) — invece di
+  // fidarmi della propagazione, la matrice marca esplicitamente "ho appena
+  // gestito io il tap" e la card esterna, se vede il flag, salta la sua
+  // navigazione immediata invece di correre in parallelo allo strappo.
+  const tapMatriceRef = useRef(false);
+  const onPressCard = () => {
+    if (tapMatriceRef.current) { tapMatriceRef.current = false; return; }
+    onApri();
+  };
+  const apriStrappando = () => {
+    tapMatriceRef.current = true;
+    setTimeout(() => { tapMatriceRef.current = false; }, 400);
+    if (strappandoRef.current) return;
+    strappandoRef.current = true;
+    // useNativeDriver:false (fix bug reale): su web l'animazione con
+    // driver nativo su opacity+transform combinati restava invisibile —
+    // il driver JS invece ridisegna ad ogni frame ed è affidabile ovunque,
+    // costo trascurabile per un'unica icona. Durata allungata (fix utente
+    // esplicito: "qualche decimo di secondo più lenta") da 260 a 650ms.
+    Animated.timing(strappo, { toValue: 1, duration: 650, easing: Easing.out(Easing.quad), useNativeDriver: false })
+      .start(() => {
+        onApri();
+        // La card resta nel loop del carosello (torna a ripassare): si
+        // ricompone pronta per la prossima volta invece di restare "strappata".
+        setTimeout(() => { strappo.setValue(0); strappandoRef.current = false; }, 700);
+      });
+  };
+  // Segnetti di strappo (fix utente esplicito: "fallo a pallini, così non
+  // sembra neanche uno strappetto") — fila di piccoli pallini color sfondo
+  // app lungo la linea di perforazione, fissi (non animano), sotto la
+  // faccia arancione della matrice: si vedono solo mentre/dopo che si
+  // stacca, esattamente come i due cerchietti di punzonatura sopra/sotto.
+  const NUM_PALLINI = 11;
+  const stiliMatrice = {
+    opacity: strappo.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+    transform: [
+      { translateX: strappo.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) },
+      { translateY: strappo.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) },
+      { rotate: strappo.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '22deg'] }) },
+    ],
+  } as any;
+  return (
+    <Pressable onPress={onPressCard} style={[s.advCard, s.ticketCard]}>
+      {evento.immagine_url && <Image source={{ uri: evento.immagine_url.startsWith('http') ? evento.immagine_url : apiUrl(evento.immagine_url) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />}
+      <View style={[StyleSheet.absoluteFillObject, s.ticketTint]} />
+      <View style={s.ticketBody}>
+        <View style={s.advBadge}><Text style={s.advBadgeText}>EVENTO</Text></View>
+        <Text style={s.ticketTitle} numberOfLines={2}>{evento.nome}</Text>
+        {evento.descrizione && <Text style={s.ticketSub} numberOfLines={1}>{evento.descrizione}</Text>}
+      </View>
+      {/* Zona della matrice: contenitore fisso (non anima) — la cavità color
+          sfondo app e i segni di punzonatura/strappo restano al loro posto,
+          SOTTO la faccia arancione animata, così quando questa si stacca
+          rivela quello che c'è davvero "sotto" il ticket (fix utente
+          esplicito, "il sotto dovrebbe essere del colore dello sfondo
+          dell'app e non arancione"), non un'altra scheda arancione. */}
+      <View style={s.ticketZona}>
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg }]} />
+        <View style={[s.ticketNotch, { top: -7, backgroundColor: colors.bg }]} />
+        {Array.from({ length: NUM_PALLINI }).map((_, i) => (
+          <View key={i} style={[s.ticketPallino, { top: 12 + i * 13, backgroundColor: colors.bg }]} />
+        ))}
+        <View style={[s.ticketNotch, { bottom: -7, backgroundColor: colors.bg }]} />
+
+        <Animated.View style={[s.ticketStub, stiliMatrice]}>
+          <Pressable onPress={apriStrappando} style={s.ticketStubTasto} hitSlop={6}>
+            <Text style={s.ticketStubTesto}>ISCRIVITI</Text>
+          </Pressable>
+        </Animated.View>
+      </View>
+    </Pressable>
+  );
+}
+
 // Una scheda ADV con fino a 5 elementi sponsorizzati dallo STESSO centro,
 // affiancati in una riga di riquadri — non c'è più un'unica immagine hero
 // (nessuna "la" immagine quando sono 5 prodotti diversi), quindi qui lo
@@ -927,27 +1010,24 @@ function makeStyles(colors: AppColors, glass: AppGlass, larghezzaScheda: number)
     andamentoTesto: { fontSize: Font.small, fontWeight: '700', color: colors.navyDeep },
     andamentoRigaDividerV: { width: 1, height: 14, backgroundColor: colors.navyLine + '33' },
     formaPallino: { width: 10, height: 10, borderRadius: 5 },
-    // Chip "N vittorie/sconfitte consecutive" sotto l'etichetta a sinistra —
-    // stesso linguaggio di Pill (components/ui.tsx), tinta oro tenue.
-    streakChip: {
-      flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill,
-      backgroundColor: colors.gold + '18', maxWidth: 104,
-    },
-    streakChipTesto: { fontSize: 9.5, fontWeight: '800', color: colors.navyDeep, flexShrink: 1 },
-    // Riga di 3 mini-stat (Set vinti/Set persi/Forma) sotto una sottile riga
+    // Riga di 3 mini-stat (Game vinti/Game persi/Forma) sotto una sottile riga
     // divisoria orizzontale — fix utente esplicito, ispirata al mockup
     // condiviso ma condensata per stare nell'altezza fissa della card.
+    // Centrate (fix utente esplicito, "centrare game vinti/game persi/forma
+    // con le rispettive info sottostanti") — sia l'etichetta sia il valore/
+    // icona sotto, non solo il blocco nel suo complesso.
     andamentoDividerOriz: { height: 1, backgroundColor: colors.navyLine + '22', marginHorizontal: Spacing.sm },
     andamentoStatsRow: { flexDirection: 'row', paddingHorizontal: Spacing.sm },
-    andamentoStatTile: { flex: 1, gap: 1 },
-    andamentoStatLabel: { fontSize: 9, fontWeight: '800', color: colors.slate, textTransform: 'uppercase', letterSpacing: 0.2 },
-    andamentoStatValore: { fontSize: 15, fontWeight: '800', color: colors.navyDeep },
+    andamentoStatTile: { flex: 1, gap: 1, alignItems: 'center' },
+    andamentoStatLabel: { fontSize: 9, fontWeight: '800', color: colors.slate, textTransform: 'uppercase', letterSpacing: 0.2, textAlign: 'center' },
+    andamentoStatValore: { fontSize: 15, fontWeight: '800', color: colors.navyDeep, textAlign: 'center' },
     // Banner frase "ironica e competizionale" in fondo alla slide 2 (fix
-    // utente esplicito) — tinta oro tenue, stesso linguaggio dello
-    // streakChip qui sopra, ma a piena larghezza.
+    // utente esplicito) — tinta oro tenue, a piena larghezza. marginTop
+    // ridotto (fix utente esplicito: "check che non si sovrapponga ad altre
+    // info") per garantire sempre spazio proprio sotto la riga di stat,
+    // anche quando "Forma" mostra l'icona di trend oltre al testo.
     andamentoBanner: {
-      flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6,
+      flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4,
       paddingHorizontal: Spacing.sm, paddingVertical: 5, borderRadius: Radius.sm,
       backgroundColor: colors.gold + '14',
     },
@@ -985,12 +1065,47 @@ function makeStyles(colors: AppColors, glass: AppGlass, larghezzaScheda: number)
       backgroundColor: 'rgba(30, 49, 74, 0.92)', padding: Spacing.lg, justifyContent: 'flex-end',
       borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
     },
-    advOverlay: { backgroundColor: 'rgba(15,23,38,0.38)' },
     advBadge: { position: 'absolute', top: Spacing.md, left: Spacing.md, backgroundColor: colors.navy, paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.pill },
     advBadgeText: { color: colors.white, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.3 },
     advTitle: { color: colors.white, fontSize: Font.h3, fontWeight: '800' },
-    advSub: { color: colors.goldSoft, fontSize: Font.small, fontWeight: '700', marginTop: 4 },
-    advSubChiaro: { color: 'rgba(255,255,255,0.75)', fontSize: Font.small, fontWeight: '600', marginTop: 4 },
+    // Ticket evento (fix utente esplicito: "come un ticket di uno
+    // spettacolo... colore di sfondo arancione") — sovrascrive lo sfondo
+    // scuro di advCard con l'arancione/oro, lascia spazio a destra per la
+    // matrice strappabile.
+    ticketCard: { backgroundColor: colors.gold, borderColor: 'rgba(22,37,58,0.18)', justifyContent: 'flex-start', flexDirection: 'row', padding: 0 },
+    // Tinta arancione sopra l'eventuale immagine dell'evento — così lo
+    // sfondo percepito resta SEMPRE arancione (fix utente esplicito) anche
+    // quando il centro ha caricato una foto, non solo a card vuota.
+    ticketTint: { backgroundColor: colors.gold + 'D9' },
+    ticketBody: { flex: 1, padding: Spacing.lg, justifyContent: 'flex-end' },
+    ticketTitle: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
+    ticketSub: { color: colors.navyDeep, opacity: 0.72, fontSize: Font.small, fontWeight: '600', marginTop: 4 },
+    // Matrice strappabile: striscia verticale a destra. `ticketZona` è il
+    // guscio FISSO (non anima mai) — contiene la cavità color sfondo app, i
+    // cerchietti ticketNotch (a cavallo del bordo superiore/inferiore della
+    // card, tagliati a metà dall'overflow:hidden di advCard, stessa
+    // illusione ottica di un vero biglietto) e i pallini ticketPallino. Sopra
+    // a tutto questo sta `ticketStub`, la faccia arancione che anima: mentre
+    // è intatta copre completamente la zona (sembra un ticket unico), e
+    // staccandosi rivela quello che c'è sotto (fix utente esplicito: "il
+    // sotto dovrebbe essere del colore dello sfondo dell'app, non arancione,
+    // e si dovrebbero vedere i segnetti dello strappo").
+    ticketZona: { width: 56, alignItems: 'center', justifyContent: 'center' },
+    ticketStub: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center',
+    } as any,
+    ticketNotch: { position: 'absolute', left: -7, width: 14, height: 14, borderRadius: 7 },
+    // Pallini della perforazione (fix utente esplicito: "fallo a pallini,
+    // così non sembra neanche uno strappetto") — piccoli cerchi a cavallo
+    // della linea di taglio, stessa fila dei due ticketNotch più grandi
+    // sopra/sotto, per una vera linea perforata invece di triangoli a dente.
+    ticketPallino: { position: 'absolute', left: -3, width: 6, height: 6, borderRadius: 3 },
+    ticketStubTasto: { alignItems: 'center', justifyContent: 'center', padding: Spacing.sm },
+    ticketStubTesto: {
+      color: colors.navyDeep, fontSize: 12, fontWeight: '900', letterSpacing: 1.2,
+      transform: [{ rotate: '-90deg' }],
+    },
     multiCard: { justifyContent: 'flex-start', paddingTop: Spacing.xl + Spacing.md },
     tileRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1, marginTop: Spacing.md },
     tile: { flex: 1, alignItems: 'center' },
