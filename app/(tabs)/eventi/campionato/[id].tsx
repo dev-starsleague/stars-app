@@ -5,10 +5,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../lib/auth';
-import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, type DettaglioCampionato } from '../../../../lib/api';
+import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, type DettaglioCampionato } from '../../../../lib/api';
+import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
-import { Card, Muted, IconButton, Segmented, Avatar } from '../../../../components/ui';
-import { TabellaClassifica, Tabellone, RigaMatch, mappaNomiPartecipanti, etichettaTurno, type ColonnaTabellone } from '../../../../components/campionatoTorneo';
+import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
+import {
+  TabellaClassifica, Tabellone, RigaMatch, mappaNomiPartecipanti, etichettaTurno,
+  ListaPartecipantiPerCategoria, ModaleCoppia, ModaleVotoPartita, type ColonnaTabellone, type MatchComune,
+} from '../../../../components/campionatoTorneo';
 import { useTheme } from '../../../../lib/theme';
 import { Spacing, Font, Radius, AppColors } from '../../../../constants/theme';
 import type { RigaClassifica, Giocatore, CampionatoGiornata } from '../../../../types/models';
@@ -24,6 +28,9 @@ export default function CampionatoDettaglio() {
   const [classifiche, setClassifiche] = useState<Record<string, RigaClassifica[]>>({});
   const [gironeSel, setGironeSel] = useState<string | null>(null);
   const [caricando, setCaricando] = useState(true);
+  const [coppiaAperta, setCoppiaAperta] = useState(false);
+  const [iscrivendo, setIscrivendo] = useState(false);
+  const [votoMatch, setVotoMatch] = useState<MatchComune | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -50,6 +57,20 @@ export default function CampionatoDettaglio() {
     () => dettaglio?.partecipanti.find((p) => p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id)?.id ?? null,
     [dettaglio, me]
   );
+
+  // ISCRIVITI (fix utente esplicito, Eventi "Iscriviti": "il tasto
+  // ISCRIVITI come prima cosa") — solo mentre le iscrizioni sono aperte;
+  // a coppie passa dalla stessa scelta compagno degli altri due dettagli.
+  const iscriviti = async (partnerId?: string) => {
+    if (!me || !dettaglio) return;
+    setIscrivendo(true);
+    const res = await iscrivitiCampionato(dettaglio.campionato.id, me.id, dettaglio.campionato.sport, partnerId ?? null);
+    setIscrivendo(false);
+    setCoppiaAperta(false);
+    if (res.ok) { avvisa('Iscrizione registrata', `Sei iscritto a "${dettaglio.campionato.nome}".`); load(); }
+    else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
+  };
+  const avviaIscrizione = () => { if (dettaglio?.campionato.tipo_iscrizione === 'coppia') setCoppiaAperta(true); else iscriviti(); };
 
   // Playoff: colonne del tabellone, un turno per colonna (giornate fase
   // "playoff"). Campione: il vincitore della finale (ultimo turno), solo
@@ -93,6 +114,12 @@ export default function CampionatoDettaglio() {
     );
   }
   const { campionato, gironi } = dettaglio;
+  // Iscrizioni ancora aperte: si mostra recap + ISCRIVITI (fix utente
+  // esplicito, "Iscriviti") — non ha ancora senso mostrare classifica/
+  // tabellone/giornate, niente è ancora cominciato. Chiuse o in corso: la
+  // vista "In corso" (classifica+tabellone, poi giornate).
+  const iscrizioniAperte = campionato.stato === 'iscrizioni_aperte';
+  const righePartecipanti = dettaglio.partecipanti.map((p) => ({ id: p.id, nome: nomeDi(p.id), ranking: p.ranking, mio: p.id === mioPartecipanteId }));
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -114,7 +141,27 @@ export default function CampionatoDettaglio() {
           </View>
         )}
 
-        {/* 1. Classifica */}
+        {iscrizioniAperte && (
+          <Card style={s.card}>
+            <Text style={s.sezioneTitolo}>{campionato.nome}</Text>
+            <Muted style={{ marginBottom: Spacing.md }}>
+              {campionato.sport} · {campionato.divisione === 'misto' ? 'Misto' : campionato.divisione === 'maschile' ? 'Maschile' : 'Femminile'}
+              {campionato.quota_iscrizione_a_giocatore ? ` · ${campionato.quota_iscrizione_a_giocatore}€` : ''}
+            </Muted>
+            {mioPartecipanteId ? (
+              <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
+            ) : (
+              <Button
+                title={iscrivendo ? 'Iscrizione…' : campionato.tipo_iscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'}
+                loading={iscrivendo} onPress={avviaIscrizione}
+              />
+            )}
+          </Card>
+        )}
+
+        {/* 1. Classifica + Tabellone (fix utente esplicito, Eventi "In
+            corso": "prima cosa la classifica dove prevista e il tabellone
+            dove previsto") */}
         <Text style={s.sezioneTitolo}>Classifica</Text>
         <Card style={s.card}>
           {gironi.length > 1 && (
@@ -127,6 +174,15 @@ export default function CampionatoDettaglio() {
           )}
           <TabellaClassifica righe={(gironeSel && classifiche[gironeSel]) ?? []} nomeDi={nomeDi} />
         </Card>
+
+        {colonnePlayoff.length > 0 && (
+          <>
+            <Text style={s.sezioneTitolo}>Playoff</Text>
+            <Card style={s.card}>
+              <Tabellone colonne={colonnePlayoff} onMatchPress={setVotoMatch} />
+            </Card>
+          </>
+        )}
 
         {/* 2. Giornate */}
         <Text style={s.sezioneTitolo}>Giornate</Text>
@@ -141,40 +197,38 @@ export default function CampionatoDettaglio() {
               {match.map((m) => (
                 <View key={m.id}>
                   {gironi.length > 1 && <Muted style={s.gironeTag}>{nomeGirone(m.girone_id)}</Muted>}
-                  <RigaMatch match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} />
+                  <RigaMatch match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} onPress={m.bye ? undefined : () => setVotoMatch(m)} />
                 </View>
               ))}
             </Card>
           );
         })}
 
-        {/* 3. Playoff (se presente) — tabellone a eliminazione diretta */}
-        {colonnePlayoff.length > 0 && (
-          <>
-            <Text style={s.sezioneTitolo}>Playoff</Text>
-            <Card style={s.card}>
-              <Tabellone colonne={colonnePlayoff} />
-            </Card>
-          </>
-        )}
-
-        {/* 3bis. Partecipanti */}
+        {/* 3. Partecipanti, divisi per categoria di ranking (fix utente
+            esplicito, "Iscriviti": "elenco partecipanti diviso per
+            categorie con ranking visibile") */}
         <Text style={s.sezioneTitolo}>Partecipanti ({dettaglio.partecipanti.length})</Text>
         <Card style={s.card}>
-          {dettaglio.partecipanti.length === 0 ? (
-            <Muted style={{ textAlign: 'center' }}>Nessun iscritto ancora.</Muted>
-          ) : dettaglio.partecipanti.map((p) => (
-            <View key={p.id} style={s.partRiga}>
-              <Avatar name={nomeDi(p.id)} size={32} />
-              <Text style={[s.partNome, p.id === mioPartecipanteId && s.partNomeMio]} numberOfLines={1}>{nomeDi(p.id)}</Text>
-              {gironi.length > 1 && p.girone_id && <Muted style={{ fontSize: Font.tiny }}>{nomeGirone(p.girone_id)}</Muted>}
-              {p.id === mioPartecipanteId && <Ionicons name="person" size={16} color={colors.gold} />}
-            </View>
-          ))}
+          <ListaPartecipantiPerCategoria righe={righePartecipanti} />
         </Card>
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {coppiaAperta && me && (
+        <ModaleCoppia
+          titolo={campionato.nome} sottotitolo="formato a coppie" meId={me.id}
+          onChiudi={() => setCoppiaAperta(false)}
+          onConferma={(partnerId) => iscriviti(partnerId)}
+        />
+      )}
+      {votoMatch && (
+        <ModaleVotoPartita
+          match={votoMatch} tipoMatch="campionato" meId={me?.id}
+          nomeA={nomeDi(votoMatch.partecipante_a_id)} nomeB={nomeDi(votoMatch.partecipante_b_id)}
+          onChiudi={() => setVotoMatch(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -199,8 +253,7 @@ function makeStyles(colors: AppColors) {
     },
     campioneLabel: { color: 'rgba(255,255,255,0.6)', fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },
     campioneNome: { color: '#fff', fontSize: Font.h3, fontWeight: '800' },
-    partRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 8 },
-    partNome: { flex: 1, color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
-    partNomeMio: { color: colors.gold, fontWeight: '800' },
+    iscritto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: Spacing.sm },
+    iscrittoText: { color: colors.green, fontWeight: '700' },
   });
 }

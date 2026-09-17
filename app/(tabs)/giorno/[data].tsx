@@ -4,12 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../lib/auth';
+import { useSport } from '../../../lib/sport';
 import { getPartiteGiocatore, getEventiIscritti, getEventi, iscrivitiEvento } from '../../../lib/api';
 import { servePagamento } from '../../../lib/impegni';
 import { formattaEuro } from '../../../lib/stars';
 import { avvisa } from '../../../lib/avviso';
 import { AppHeader } from '../../../components/AppHeader';
 import { Card, IconBadge, IconButton, Muted, Button } from '../../../components/ui';
+import { ModaleCoppia } from '../../../components/campionatoTorneo';
 import { useTheme } from '../../../lib/theme';
 import { Radius, Spacing, Font, AppColors } from '../../../constants/theme';
 import type { Prenotazione, EventoCustom } from '../../../types/models';
@@ -51,6 +53,7 @@ function squadreRiepilogo(p: Prenotazione): { a: string[]; b: string[] } {
 export default function GiornoDettaglio() {
   const { data } = useLocalSearchParams<{ data: string }>();
   const { me } = useAuth();
+  const { sportAttivo } = useSport();
   const router = useRouter();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -61,6 +64,11 @@ export default function GiornoDettaglio() {
   const [caricato, setCaricato] = useState(false);
   const [iscrivendo, setIscrivendo] = useState<string | null>(null);
   const [riepilogoAperto, setRiepilogoAperto] = useState<Prenotazione | null>(null);
+  // Un evento custom richiede sempre una coppia completa (fix bug reale:
+  // prima si tentava l'iscrizione da soli, che il backend rifiuta sempre —
+  // vedi lib/api.ts iscrivitiEvento) — stessa scelta del compagno usata
+  // nei dettagli evento/campionato/torneo, riusata qui.
+  const [coppiaPer, setCoppiaPer] = useState<EventoCustom | null>(null);
 
   const load = useCallback(async () => {
     if (!me) return;
@@ -106,12 +114,13 @@ export default function GiornoDettaglio() {
   const coloreTipo = (t: TipoImpegno) => t === 'partita' ? colors.green : t === 'lezione' ? colors.amber : colors.viola;
   const etichettaTipo = (t: TipoImpegno) => t === 'partita' ? 'Partita' : t === 'lezione' ? 'Lezione' : 'Evento';
 
-  const iscriviti = async (e: EventoCustom) => {
+  const iscriviti = async (e: EventoCustom, partnerId: string) => {
     if (!me) return;
     setIscrivendo(e.id);
-    const res = await iscrivitiEvento(e.id, me.id);
+    const res = await iscrivitiEvento(e.id, me.id, partnerId, sportAttivo);
     setIscrivendo(null);
-    if (res.ok) { avvisa('Iscrizione registrata', `Sei iscritto a "${e.nome}".`); load(); }
+    setCoppiaPer(null);
+    if (res.ok) { avvisa('Iscrizione registrata', `Sei iscritto a "${e.nome}" in coppia.`); load(); }
     else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
   };
 
@@ -168,7 +177,7 @@ export default function GiornoDettaglio() {
                     </View>
                     <Button
                       title={iscrivendo === e.id ? 'Iscrizione…' : 'Iscriviti'} variant="ghost"
-                      loading={iscrivendo === e.id} onPress={() => iscriviti(e)} style={{ marginTop: Spacing.md }}
+                      loading={iscrivendo === e.id} onPress={() => setCoppiaPer(e)} style={{ marginTop: Spacing.md }}
                     />
                   </Card>
                 ))}
@@ -194,6 +203,14 @@ export default function GiornoDettaglio() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {coppiaPer && me && (
+        <ModaleCoppia
+          titolo={coppiaPer.nome} sottotitolo="formato a coppie" meId={me.id} obbligaCoppia
+          onChiudi={() => setCoppiaPer(null)}
+          onConferma={(partnerId) => partnerId && iscriviti(coppiaPer, partnerId)}
+        />
+      )}
     </SafeAreaView>
   );
 }

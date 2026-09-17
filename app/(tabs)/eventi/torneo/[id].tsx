@@ -1,17 +1,21 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../lib/auth';
-import { getTorneoDettaglio, getClassificaTorneo, getGiocatori, type DettaglioTorneo } from '../../../../lib/api';
+import { getTorneoDettaglio, getClassificaTorneo, getGiocatori, iscrivitiTorneo, type DettaglioTorneo } from '../../../../lib/api';
+import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
-import { Card, Muted, IconButton, Avatar } from '../../../../components/ui';
-import { TabellaClassifica, Tabellone, RigaMatch, mappaNomiPartecipanti, etichettaTurno, calcolaClassificaBracket, type ColonnaTabellone } from '../../../../components/campionatoTorneo';
+import { Card, Muted, IconButton, Button } from '../../../../components/ui';
+import {
+  TabellaClassifica, Tabellone, RigaMatch, mappaNomiPartecipanti, etichettaTurno, calcolaClassificaBracket,
+  ListaPartecipantiPerCategoria, ModaleCoppia, ModaleVotoPartita, type ColonnaTabellone, type MatchComune,
+} from '../../../../components/campionatoTorneo';
 import { useTheme } from '../../../../lib/theme';
 import { Spacing, Font, Radius, AppColors } from '../../../../constants/theme';
-import type { RigaClassifica, Giocatore, TorneoRound } from '../../../../types/models';
+import type { RigaClassifica, Giocatore, TorneoRound, TorneoMatch } from '../../../../types/models';
 
 export default function TorneoDettaglio() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,6 +27,13 @@ export default function TorneoDettaglio() {
   const [giocatoriMap, setGiocatoriMap] = useState<Map<string, Giocatore>>(new Map());
   const [classificaRR, setClassificaRR] = useState<RigaClassifica[]>([]);
   const [caricando, setCaricando] = useState(true);
+  const [coppiaAperta, setCoppiaAperta] = useState(false);
+  const [iscrivendo, setIscrivendo] = useState(false);
+  // TorneoMatch, non il MatchComune più stretto del componente condiviso
+  // (Tabellone/RigaMatch): qui serve team_a_ids/team_b_ids per il voto sui
+  // match dell'americano/stars_of_the_court, che non hanno partecipante_a_id/
+  // b_id (coppie effimere, vedi nomeSquadraAmericano sotto).
+  const [votoMatch, setVotoMatch] = useState<TorneoMatch | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -48,6 +59,20 @@ export default function TorneoDettaglio() {
     () => dettaglio?.partecipanti.find((p) => p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id)?.id ?? null,
     [dettaglio, me]
   );
+
+  // ISCRIVITI (fix utente esplicito, Eventi "Iscriviti": "il tasto
+  // ISCRIVITI come prima cosa") — stessa scelta compagno degli altri
+  // dettagli quando il formato è a coppie.
+  const iscriviti = async (partnerId?: string) => {
+    if (!me || !dettaglio) return;
+    setIscrivendo(true);
+    const res = await iscrivitiTorneo(dettaglio.torneo.id, me.id, dettaglio.torneo.sport, partnerId ?? null);
+    setIscrivendo(false);
+    setCoppiaAperta(false);
+    if (res.ok) { avvisa('Iscrizione registrata', `Sei iscritto a "${dettaglio.torneo.nome}".`); load(); }
+    else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
+  };
+  const avviaIscrizione = () => { if (dettaglio?.torneo.tipo_iscrizione === 'coppia') setCoppiaAperta(true); else iscriviti(); };
 
   const eEliminazione = dettaglio?.torneo.format_type === 'single_elimination';
   const eAmericano = dettaglio?.torneo.format_type === 'americano';
@@ -159,6 +184,8 @@ export default function TorneoDettaglio() {
     );
   }
   const { torneo } = dettaglio;
+  const iscrizioniAperte = torneo.stato === 'iscrizioni_aperte';
+  const righePartecipanti = dettaglio.partecipanti.map((p) => ({ id: p.id, nome: nomeDi(p.id), ranking: p.ranking, mio: p.id === mioPartecipanteId }));
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -180,11 +207,43 @@ export default function TorneoDettaglio() {
           </View>
         )}
 
+        {iscrizioniAperte && (
+          <Card style={s.card}>
+            <Text style={s.sezioneTitolo}>{torneo.nome}</Text>
+            <Muted style={{ marginBottom: Spacing.md }}>
+              {torneo.sport} · {torneo.divisione === 'misto' ? 'Misto' : torneo.divisione === 'maschile' ? 'Maschile' : 'Femminile'}
+              {torneo.quota_iscrizione_a_giocatore ? ` · ${torneo.quota_iscrizione_a_giocatore}€` : ''}
+            </Muted>
+            {mioPartecipanteId ? (
+              <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
+            ) : (
+              <Button
+                title={iscrivendo ? 'Iscrizione…' : torneo.tipo_iscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'}
+                loading={iscrivendo} onPress={avviaIscrizione}
+              />
+            )}
+          </Card>
+        )}
+
+        {/* 1. Classifica + Tabellone (fix utente esplicito, Eventi "In
+            corso": "prima cosa la classifica... e il tabellone dove
+            previsto") — il Tabellone si è spostato qui da dopo i
+            turni/giornate specifici del formato. */}
         <Text style={s.sezioneTitolo}>Classifica</Text>
         <Card style={s.card}>
           <TabellaClassifica righe={classifica} nomeDi={nomeDi} />
         </Card>
 
+        {haTabellone && (
+          <>
+            <Text style={s.sezioneTitolo}>Tabellone{eSwiss ? ' finale' : ''}</Text>
+            <Card style={s.card}>
+              <Tabellone colonne={colonneTabellone} onMatchPress={(m) => setVotoMatch(m as TorneoMatch)} />
+            </Card>
+          </>
+        )}
+
+        {/* 2. Turni/giornate secondo il formato */}
         {!eEliminazione && !eAmericano && !eSwiss && !eStars && (
           <>
             <Text style={s.sezioneTitolo}>Giornate</Text>
@@ -197,7 +256,7 @@ export default function TorneoDettaglio() {
                 <Card key={r.id} style={s.card}>
                   <Text style={s.giornataTitolo}>Giornata {r.numero}</Text>
                   {match.map((m) => (
-                    <RigaMatch key={m.id} match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} />
+                    <RigaMatch key={m.id} match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} onPress={m.bye ? undefined : () => setVotoMatch(m)} />
                   ))}
                 </Card>
               );
@@ -217,20 +276,11 @@ export default function TorneoDettaglio() {
                 <Card key={r.id} style={s.card}>
                   <Text style={s.giornataTitolo}>Turno {r.numero}</Text>
                   {match.map((m) => (
-                    <RigaMatch key={m.id} match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} />
+                    <RigaMatch key={m.id} match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} onPress={m.bye ? undefined : () => setVotoMatch(m)} />
                   ))}
                 </Card>
               );
             })}
-          </>
-        )}
-
-        {haTabellone && (
-          <>
-            <Text style={s.sezioneTitolo}>Tabellone{eSwiss ? ' finale' : ''}</Text>
-            <Card style={s.card}>
-              <Tabellone colonne={colonneTabellone} />
-            </Card>
           </>
         )}
 
@@ -251,11 +301,11 @@ export default function TorneoDettaglio() {
                     const vinceA = giocato && (m.punti_a ?? 0) > (m.punti_b ?? 0);
                     const vinceB = giocato && (m.punti_b ?? 0) > (m.punti_a ?? 0);
                     return (
-                      <View key={m.id} style={s.matchAmRiga}>
+                      <Pressable key={m.id} style={s.matchAmRiga} onPress={() => setVotoMatch(m)}>
                         <Text style={[s.matchAmSquadra, vinceA && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_a_ids)}</Text>
                         <Text style={s.matchAmVs}>{giocato ? `${m.punti_a}-${m.punti_b}` : 'vs'}</Text>
                         <Text style={[s.matchAmSquadra, s.matchAmSquadraB, vinceB && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_b_ids)}</Text>
-                      </View>
+                      </Pressable>
                     );
                   })}
                   {riposano.length > 0 && (
@@ -291,14 +341,14 @@ export default function TorneoDettaglio() {
                     const vinceA = giocato && (m.games_a ?? 0) > (m.games_b ?? 0);
                     const vinceB = giocato && (m.games_b ?? 0) > (m.games_a ?? 0);
                     return (
-                      <View key={m.id}>
+                      <Pressable key={m.id} onPress={() => setVotoMatch(m)}>
                         {m.is_stars_court && <Text style={s.starsCampoLabel}>👑 Campo STARS</Text>}
                         <View style={s.matchAmRiga}>
                           <Text style={[s.matchAmSquadra, vinceA && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_a_ids)}</Text>
                           <Text style={s.matchAmVs}>{giocato ? `${m.games_a}-${m.games_b}` : 'vs'}</Text>
                           <Text style={[s.matchAmSquadra, s.matchAmSquadraB, vinceB && s.matchAmVincitore]} numberOfLines={2}>{nomeSquadraAmericano(m.team_b_ids)}</Text>
                         </View>
-                      </View>
+                      </Pressable>
                     );
                   })}
                 </Card>
@@ -307,21 +357,32 @@ export default function TorneoDettaglio() {
           </>
         )}
 
+        {/* 3. Partecipanti, divisi per categoria di ranking (fix utente
+            esplicito, "Iscriviti": "elenco partecipanti diviso per
+            categorie con ranking visibile") */}
         <Text style={s.sezioneTitolo}>Partecipanti ({dettaglio.partecipanti.length})</Text>
         <Card style={s.card}>
-          {dettaglio.partecipanti.length === 0 ? (
-            <Muted style={{ textAlign: 'center' }}>Nessun iscritto ancora.</Muted>
-          ) : dettaglio.partecipanti.map((p) => (
-            <View key={p.id} style={s.partRiga}>
-              <Avatar name={nomeDi(p.id)} size={32} />
-              <Text style={[s.partNome, p.id === mioPartecipanteId && s.partNomeMio]} numberOfLines={1}>{nomeDi(p.id)}</Text>
-              {p.id === mioPartecipanteId && <Ionicons name="person" size={16} color={colors.gold} />}
-            </View>
-          ))}
+          <ListaPartecipantiPerCategoria righe={righePartecipanti} />
         </Card>
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {coppiaAperta && me && (
+        <ModaleCoppia
+          titolo={torneo.nome} sottotitolo="formato a coppie" meId={me.id}
+          onChiudi={() => setCoppiaAperta(false)}
+          onConferma={(partnerId) => iscriviti(partnerId)}
+        />
+      )}
+      {votoMatch && (
+        <ModaleVotoPartita
+          match={votoMatch} tipoMatch="torneo" meId={me?.id}
+          nomeA={votoMatch.team_a_ids ? nomeSquadraAmericano(votoMatch.team_a_ids) : nomeDi(votoMatch.partecipante_a_id)}
+          nomeB={votoMatch.team_b_ids ? nomeSquadraAmericano(votoMatch.team_b_ids) : nomeDi(votoMatch.partecipante_b_id)}
+          onChiudi={() => setVotoMatch(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -345,9 +406,8 @@ function makeStyles(colors: AppColors) {
     },
     campioneLabel: { color: 'rgba(255,255,255,0.6)', fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },
     campioneNome: { color: '#fff', fontSize: Font.h3, fontWeight: '800' },
-    partRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 8 },
-    partNome: { flex: 1, color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
-    partNomeMio: { color: colors.gold, fontWeight: '800' },
+    iscritto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: Spacing.sm },
+    iscrittoText: { color: colors.green, fontWeight: '700' },
     matchAmRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 8 },
     matchAmSquadra: { flex: 1, color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
     matchAmSquadraB: { textAlign: 'right' },

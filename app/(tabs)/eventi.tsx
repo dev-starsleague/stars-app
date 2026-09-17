@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -8,17 +8,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 import {
-  getEventi, iscrivitiEvento, getEventiIscritti,
-  getCampionati, iscrivitiCampionato, getCampionatiIscritti, getPosizioneCampionato,
-  getTornei, iscrivitiTorneo, getTorneiIscritti, getPosizioneTorneo,
-  cercaGiocatori, getCentri, centriPreferiti,
+  getEventi, getEventiIscritti,
+  getCampionati, getCampionatiIscritti, getPosizioneCampionato,
+  getTornei, getTorneiIscritti, getPosizioneTorneo,
+  getCentri, centriPreferiti,
 } from '../../lib/api';
-import { avvisa } from '../../lib/avviso';
+import { apiUrl } from '../../lib/apiClient';
+import { statoIscrizioni, ETICHETTA_STATO_ISCRIZIONI, type StatoIscrizioni } from '../../lib/stars';
 import { AppHeader } from '../../components/AppHeader';
-import { Button, Card, Chip, IconBadge, Input, Muted, Segmented, Avatar } from '../../components/ui';
+import { Card, Chip, IconBadge, Input, Muted, Segmented, Button } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
-import type { EventoCustom, Campionato, Torneo, Giocatore, Centro } from '../../types/models';
+import type { EventoCustom, Campionato, Torneo, Centro } from '../../types/models';
 
 type TabE = 'attivi' | 'miei' | 'passati';
 type TipoVoce = 'evento' | 'campionato' | 'torneo';
@@ -29,19 +30,25 @@ type FiltroZona = { tipo: 'regione' | 'provincia'; valore: string };
 // Vista unificata: eventi custom, campionati e tornei sono 3 motori
 // diversi lato backend (stessa cosa nel gestionale, vedi stars-system/
 // src/routes/eventi/+page.svelte) ma per il giocatore sono semplicemente
-// "cose a cui iscriversi" — un'unica lista, tipo distinto da un'etichetta.
+// "cose a cui iscriversi/da seguire" — un'unica lista, tipo distinto da
+// un'etichetta. L'iscrizione vera e propria (fix utente esplicito: "il
+// tasto ISCRIVITI come prima cosa") vive ora nel dettaglio di ciascuna
+// voce (tutte apribili, evento incluso — prima non lo era), non più qui:
+// questa schermata resta solo lista + navigazione.
 interface Voce {
   tipo: TipoVoce;
   id: string;
   centroId: string;
   nome: string;
-  descrizione?: string | null;
   sport?: string;
-  tipoIscrizione?: 'singolo' | 'coppia';
   divisione: 'maschile' | 'femminile' | 'misto';
-  aperto: boolean; // iscrizioni aperte ora
-  soldOut: boolean; // chiuso per limite iscritti raggiunto, non ancora iniziato
-  bozza: boolean; // non ancora pubblicato/aperto (bozza/draft/cancelled) — mai visibile a chi non è iscritto
+  immagineUrl?: string | null;
+  aperturaIscrizioni: string | null;
+  chiusuraIscrizioni: string | null;
+  dataInizio: string | null;
+  formato: string;
+  statoBackend: string; // stato grezzo lato backend, per l'etichetta di avanzamento in "In corso"
+  bozza: boolean;
   concluso: boolean;
   iscrittiCount: number;
   maxPartecipanti?: number | null;
@@ -51,6 +58,20 @@ interface Voce {
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 const ETICHETTA_TIPO: Record<TipoVoce, string> = { evento: 'Evento', campionato: 'Campionato', torneo: 'Torneo' };
 const ICONA_TIPO: Record<TipoVoce, IoniconName> = { evento: 'trophy', campionato: 'ribbon', torneo: 'medal' };
+const ETICHETTA_FORMATO_TORNEO: Record<string, string> = {
+  round_robin: 'Girone all’italiana', single_elimination: 'Eliminazione diretta', americano: 'Americano', swiss: 'Svizzero',
+};
+function formatoDi(tipo: TipoVoce, formatType?: string, unitaCompetitiva?: string): string {
+  if (tipo === 'campionato') return 'Gironi + playoff';
+  if (tipo === 'torneo') return ETICHETTA_FORMATO_TORNEO[formatType ?? ''] ?? formatType ?? '—';
+  return unitaCompetitiva === 'coppia_fissa' ? 'Coppia fissa' : unitaCompetitiva ?? '—';
+}
+function formattaDataBreve(iso: string | null): string | null {
+  return iso ? new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) : null;
+}
+const COLORE_STATO: Record<StatoIscrizioni, (c: AppColors) => string> = {
+  in_arrivo: (c) => c.amber, aperte: (c) => c.green, sold_out: (c) => c.red, chiuso: (c) => c.red,
+};
 
 export default function Eventi() {
   const { me, demoMode } = useAuth();
@@ -58,7 +79,7 @@ export default function Eventi() {
   const { colors, glass, scheme } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   // "In corso" di default (fix utente esplicito): il giocatore apre la
-  // scheda e vede subito le proprie iscrizioni, non l'elenco da sfogliare.
+  // scheda e vede subito cosa sta succedendo ora, non l'elenco da sfogliare.
   const [tabE, setTabE] = useState<TabE>('miei');
   const [q, setQ] = useState('');
   const [eventi, setEventi] = useState<EventoCustom[]>([]);
@@ -68,10 +89,9 @@ export default function Eventi() {
   const [iscritti, setIscritti] = useState<Record<string, boolean>>({}); // chiave `${tipo}:${id}`
   const [posizioni, setPosizioni] = useState<Record<string, number>>({}); // chiave `${tipo}:${id}`, solo per i miei eventi in corso
   const [refreshing, setRefreshing] = useState(false);
-  const [coppiaPer, setCoppiaPer] = useState<Voce | null>(null); // voce per cui sta scegliendo il compagno
+  const [locandinaAperta, setLocandinaAperta] = useState<string | null>(null); // fix utente esplicito: tap sulla locandina la ingrandisce a popup
   // Filtri: per centro (tutti / solo preferiti / una zona geografica) e per
-  // tipo (tutti / campionato / torneo) — sostituiscono le vecchie
-  // categorie non funzionanti (fix utente esplicito).
+  // tipo (tutti / campionato / torneo).
   const [modoCentro, setModoCentro] = useState<ModoCentro>('tutti');
   const [zonaApplicata, setZonaApplicata] = useState<FiltroZona | null>(null);
   const [mostraZona, setMostraZona] = useState(false);
@@ -92,8 +112,8 @@ export default function Eventi() {
 
       // Posizione in classifica, solo per i MIEI campionati/tornei "in
       // corso" (iscrizioni chiuse ma non ancora conclusi) — al posto
-      // della generica etichetta "In corso" nella card (fix utente
-      // esplicito: "tanto si sa già che sono quelli in corso").
+      // della generica etichetta di avanzamento nella card (fix utente
+      // esplicito: "la propria posizione", solo se iscritto).
       const campInCorso = campIscr.filter((c) => c.stato !== 'iscrizioni_aperte' && c.stato !== 'concluso');
       const tornInCorso = tornIscr.filter((t) => t.stato !== 'iscrizioni_aperte' && t.stato !== 'concluso');
       const [posCamp, posTorn] = await Promise.all([
@@ -108,39 +128,29 @@ export default function Eventi() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  // "Sold out" = chiuso perché il limite iscritti è stato raggiunto
-  // (fix utente esplicito: "al raggiungimento della soglia giocatori le
-  // iscrizioni si chiudono e l'evento diventa 'sold out'") — solo
-  // campionati/tornei hanno oggi questo automatismo lato backend (vedi
-  // app/routers/torneo.py:_valida_partecipante), il Custom Event Builder
-  // (evento) ha uno stato "ready" senza una fase "chiuso" distinta, non
-  // se ne occupa questo automatismo. Non ancora concluso: sold out ha
-  // senso solo finché l'evento non è iniziato.
-  const soldOutDi = (chiuso: boolean, concluso: boolean, iscrittiCount: number, max?: number | null) =>
-    !!max && iscrittiCount >= max && chiuso && !concluso;
-
   const voci: Voce[] = useMemo(() => [
     ...eventi.map((e): Voce => ({
-      tipo: 'evento', id: e.id, centroId: e.centro_id, nome: e.nome, descrizione: e.descrizione, divisione: e.divisione,
-      aperto: e.stato === 'ready', soldOut: false, bozza: e.stato === 'draft' || e.stato === 'cancelled',
-      concluso: e.stato === 'completed', iscrittiCount: e.iscritti_count ?? 0, maxPartecipanti: e.max_partecipanti,
+      tipo: 'evento', id: e.id, centroId: e.centro_id, nome: e.nome, divisione: e.divisione,
+      immagineUrl: e.immagine_url, aperturaIscrizioni: e.apertura_iscrizioni_at, chiusuraIscrizioni: e.chiusura_iscrizioni_at,
+      dataInizio: e.data_evento ?? null, formato: formatoDi('evento', undefined, e.unita_competitiva),
+      statoBackend: e.stato, bozza: e.stato === 'draft' || e.stato === 'cancelled', concluso: e.stato === 'completed',
+      iscrittiCount: e.iscritti_count ?? 0, maxPartecipanti: e.max_partecipanti,
     })),
     ...campionati.map((c): Voce => ({
-      tipo: 'campionato', id: c.id, centroId: c.centro_id, nome: c.nome, sport: c.sport, tipoIscrizione: c.tipo_iscrizione, divisione: c.divisione,
-      aperto: c.stato === 'iscrizioni_aperte', soldOut: false, bozza: c.stato === 'bozza', concluso: c.stato === 'concluso', iscrittiCount: c.iscritti_count ?? 0,
+      tipo: 'campionato', id: c.id, centroId: c.centro_id, nome: c.nome, sport: c.sport, divisione: c.divisione,
+      aperturaIscrizioni: c.apertura_iscrizioni_at, chiusuraIscrizioni: c.chiusura_iscrizioni_at,
+      dataInizio: c.inizio_evento_at, formato: formatoDi('campionato'),
+      statoBackend: c.stato, bozza: c.stato === 'bozza', concluso: c.stato === 'concluso', iscrittiCount: c.iscritti_count ?? 0,
       quota: c.quota_iscrizione_a_giocatore,
     })),
-    ...tornei.map((t): Voce => {
-      const maxPartecipanti = t.format_config?.max_iscritti ?? null;
-      const iscrittiCount = t.iscritti_count ?? 0;
-      const chiuso = t.stato === 'iscrizioni_chiuse';
-      const concluso = t.stato === 'concluso';
-      return {
-        tipo: 'torneo', id: t.id, centroId: t.centro_id, nome: t.nome, sport: t.sport, tipoIscrizione: t.tipo_iscrizione, divisione: t.divisione ?? 'misto',
-        aperto: t.stato === 'iscrizioni_aperte', soldOut: soldOutDi(chiuso, concluso, iscrittiCount, maxPartecipanti), bozza: t.stato === 'bozza',
-        concluso, iscrittiCount, maxPartecipanti, quota: t.quota_iscrizione_a_giocatore,
-      };
-    }),
+    ...tornei.map((t): Voce => ({
+      tipo: 'torneo', id: t.id, centroId: t.centro_id, nome: t.nome, sport: t.sport, divisione: t.divisione ?? 'misto',
+      aperturaIscrizioni: t.apertura_iscrizioni_at, chiusuraIscrizioni: t.chiusura_iscrizioni_at,
+      dataInizio: t.inizio_at, formato: formatoDi('torneo', t.format_type),
+      statoBackend: t.stato, bozza: t.stato === 'bozza', concluso: t.stato === 'concluso',
+      iscrittiCount: t.iscritti_count ?? 0, maxPartecipanti: t.format_config?.max_iscritti ?? null,
+      quota: t.quota_iscrizione_a_giocatore,
+    })),
   ], [eventi, campionati, tornei]);
 
   const preferiti = useMemo(() => centriPreferiti(me), [me]);
@@ -157,59 +167,33 @@ export default function Eventi() {
   }, [modoCentro, zonaApplicata, preferiti, centroDiVoce]);
   const passaFiltroTipo = (v: Voce) => tipoFiltro === 'tutti' ? true : v.tipo === tipoFiltro;
 
-  const iscriviti = async (v: Voce, partnerId?: string | null) => {
-    if (!me) return;
-    if (v.tipo === 'evento') {
-      const res = await iscrivitiEvento(v.id, me.id);
-      if (res.ok) { segnaIscritto(v); avvisa('Iscrizione registrata', `Sei iscritto a "${v.nome}".`); }
-      else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
-      return;
-    }
-    const fn = v.tipo === 'campionato' ? iscrivitiCampionato : iscrivitiTorneo;
-    const res = await fn(v.id, me.id, v.sport ?? 'Padel', partnerId ?? null);
-    if (res.ok) {
-      segnaIscritto(v);
-      setCoppiaPer(null);
-      avvisa('Iscrizione registrata', partnerId ? `Sei iscritto a "${v.nome}" in coppia.` : `Sei iscritto a "${v.nome}".`);
-    } else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
-  };
-  const segnaIscritto = (v: Voce) => setIscritti((p) => ({ ...p, [`${v.tipo}:${v.id}`]: true }));
-
-  const avviaIscrizione = (v: Voce) => {
-    if (v.tipoIscrizione === 'coppia') setCoppiaPer(v);
-    else iscriviti(v);
-  };
-
   const eIscritto = (v: Voce) => !!iscritti[`${v.tipo}:${v.id}`];
-  // "Iscriviti" = SOLO ciò che ha le iscrizioni ancora aperte ORA (fix
-  // utente esplicito: "devo vedere SOLO gli eventi con le iscrizioni
-  // aperte") — non più "tutto il non concluso" (che mostrava anche
-  // eventi già in corso, a iscrizioni chiuse, dove toccare "Iscriviti"
-  // non avrebbe comunque funzionato). "In corso" (ex "I miei") SOLO le
-  // proprie iscrizioni NON ancora concluse — appena un evento si
-  // conclude sparisce da qui e passa in "Conclusi" (ex "Passati", fix
-  // utente esplicito: "gli eventi conclusi si spostano in Passati... e
-  // spariscono da I miei"), mai in entrambi contemporaneamente.
-  // "Iscriviti" mostra anche gli eventi sold out (fix utente esplicito:
-  // "lascia gli eventi visibili in 'iscriviti' anche se sold out ma
-  // sotto una sottocategoria 'sold out' fino che non inizia l'evento") —
-  // ordinati con gli aperti prima, i sold out in coda (vedi il rendering
-  // sotto per la sottocategoria vera e propria). Stesso principio esteso
-  // (fix utente esplicito) a chi ha chiuso le iscrizioni senza essere
-  // sold out (es. chiusura manuale, o un formato senza tetto iscritti):
-  // resta visibile per chi vuole solo seguirlo, in una sottocategoria
-  // "Iscrizioni chiuse" — mai però una bozza/draft non ancora pubblicata.
-  const iscrivibili = voci.filter((v) => !v.bozza && !v.concluso);
-  const miei = voci.filter((v) => eIscritto(v) && !v.concluso);
+  const statoDi = (v: Voce) => statoIscrizioni(v.aperturaIscrizioni, v.chiusuraIscrizioni, v.iscrittiCount, v.maxPartecipanti);
+
+  // "Iscriviti" = ci si può ancora registrare ORA o a breve (fix utente
+  // esplicito: niente più sezioni "iscrizioni chiuse"/"sold out" qui dentro
+  // — quegli stati si vedono ora nel badge della card, e l'evento stesso si
+  // sposta in "In corso" una volta che le iscrizioni non sono più aperte,
+  // dove l'informazione utile è l'avanzamento, non un badge morto). "In
+  // corso" = iscrizioni chiuse/sold out ma non ancora concluso — TUTTI questi
+  // eventi, non solo i propri (stessa visualizzazione di "Iscriviti", fix
+  // utente esplicito: "se non sei iscritto vedi solo lo stato di
+  // avanzamento", frase che ha senso solo se compaiono anche eventi a cui
+  // non si è iscritti). "Conclusi" resta come già era: solo i propri.
+  const iscrivibili = voci.filter((v) => !v.bozza && !v.concluso && (statoDi(v) === 'aperte' || statoDi(v) === 'in_arrivo'));
+  const inCorso = voci.filter((v) => !v.bozza && !v.concluso && (statoDi(v) === 'sold_out' || statoDi(v) === 'chiuso'));
   const passati = voci.filter((v) => v.concluso && eIscritto(v));
-  const base = tabE === 'attivi' ? iscrivibili : tabE === 'miei' ? miei : passati;
-  // Ordine: aperti (0) → chiusi non sold out (1) → sold out (2).
-  const rangoStato = (v: Voce) => (v.aperto ? 0 : v.soldOut ? 2 : 1);
+  const base = tabE === 'attivi' ? iscrivibili : tabE === 'miei' ? inCorso : passati;
   const filtrati = base
     .filter((v) => q ? v.nome.toLowerCase().includes(q.toLowerCase()) : true)
     .filter(passaFiltroCentro)
-    .filter(passaFiltroTipo)
-    .sort((a, b) => rangoStato(a) - rangoStato(b));
+    .filter(passaFiltroTipo);
+
+  const etichettaAvanzamento = (v: Voce) => {
+    const pos = posizioni[`${v.tipo}:${v.id}`];
+    if (pos) return `${pos}° posto`;
+    return v.statoBackend === 'iscrizioni_chiuse' ? 'Iscrizioni chiuse' : v.statoBackend === 'in_corso' ? 'In corso' : ETICHETTA_STATO_ISCRIZIONI[statoDi(v)];
+  };
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -241,7 +225,7 @@ export default function Eventi() {
             onChange={(v) => setTabE(v as TabE)}
             options={[
               { value: 'attivi', label: `Iscriviti (${iscrivibili.length})` },
-              { value: 'miei', label: `In corso (${miei.length})` },
+              { value: 'miei', label: `In corso (${inCorso.length})` },
               { value: 'passati', label: `Conclusi (${passati.length})` },
             ]}
             style={{ marginBottom: Spacing.md }}
@@ -279,71 +263,65 @@ export default function Eventi() {
 
         {filtrati.length === 0 ? (
           <Text style={s.empty}>Nessun evento disponibile</Text>
-        ) : filtrati.map((v, i) => {
-          const isIscritto = iscritti[`${v.tipo}:${v.id}`];
-          const chiuso = !v.aperto;
-          const apribile = v.tipo === 'campionato' || v.tipo === 'torneo';
-          const posizione = posizioni[`${v.tipo}:${v.id}`];
-          // "In corso" è ridondante per un evento a cui si è già iscritti
-          // (si sta guardando il tab "In corso", si sa già che lo è) — la
-          // posizione in classifica è l'informazione utile (fix utente
-          // esplicito). Resta "In corso" quando non è calcolabile (non
-          // iscritto, o tabellone a eliminazione diretta senza classifica).
-          // "Sold out" ha priorità: un evento pieno non è "in corso" per
-          // chi lo sta ancora guardando dal tab Iscriviti (fix utente
-          // esplicito).
-          const etichettaStato = v.soldOut ? 'Sold out' : v.concluso ? 'Concluso' : !chiuso ? 'Aperto' : posizione ? `${posizione}° posto` : 'In corso';
-          // Sottocategoria "Sold out" nel tab Iscriviti (fix utente
-          // esplicito): un'intestazione appena prima del primo elemento
-          // sold out, dato che filtrati è già ordinato aperti-poi-sold-out.
-          const primoSoldOut = tabE === 'attivi' && v.soldOut && (i === 0 || !filtrati[i - 1].soldOut);
-          // Sottocategoria "Iscrizioni chiuse" (fix utente esplicito):
-          // stesso principio, per chi ha chiuso le iscrizioni senza essere
-          // sold out — intestazione appena prima del primo elemento così.
-          const primoChiuso = tabE === 'attivi' && chiuso && !v.soldOut && (i === 0 || filtrati[i - 1].aperto);
+        ) : filtrati.map((v) => {
+          const stato = statoDi(v);
+          const colore = COLORE_STATO[stato](colors);
           return (
-            <React.Fragment key={`${v.tipo}:${v.id}`}>
-              {primoChiuso && <Text style={s.sottocategoria}>Iscrizioni chiuse</Text>}
-              {primoSoldOut && <Text style={s.sottocategoria}>Sold out</Text>}
-              <Card style={s.card}>
-                <Pressable onPress={() => apribile && router.push(`/eventi/${v.tipo}/${v.id}`)} disabled={!apribile}>
-                  <View style={s.cardHead}>
+            <Card key={`${v.tipo}:${v.id}`} style={s.card}>
+              <View style={s.cardRow}>
+                {/* Locandina a sinistra (fix utente esplicito: "deve
+                    ingrandirsi come pop-up al tocco") — solo l'evento
+                    custom ha una vera immagine oggi; campionato/torneo
+                    ricadono sull'icona di tipo, stesso posto/dimensione. */}
+                <Pressable
+                  onPress={() => v.immagineUrl && setLocandinaAperta(v.immagineUrl.startsWith('http') ? v.immagineUrl : apiUrl(v.immagineUrl))}
+                  disabled={!v.immagineUrl} style={s.locandinaWrap}
+                >
+                  {v.immagineUrl ? (
+                    <Image source={{ uri: v.immagineUrl.startsWith('http') ? v.immagineUrl : apiUrl(v.immagineUrl) }} style={s.locandina} resizeMode="cover" />
+                  ) : (
                     <IconBadge icon={ICONA_TIPO[v.tipo]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.cardName}>{v.nome}</Text>
-                      <Muted>
-                        {ETICHETTA_TIPO[v.tipo]} · {v.sport ? `${v.sport} · ` : ''}{divisione(v.divisione)} · {v.iscrittiCount}{v.maxPartecipanti ? `/${v.maxPartecipanti}` : ''}
-                        {v.quota ? ` · ${v.quota}€` : ''}
-                      </Muted>
-                    </View>
-                    <View style={[s.pill, { backgroundColor: (v.soldOut ? colors.red : chiuso ? colors.amber : colors.green) + '22' }]}>
-                      <Text style={[s.pillText, { color: v.soldOut ? colors.red : chiuso ? colors.amber : colors.green }]}>{etichettaStato}</Text>
-                    </View>
-                    {apribile && <Ionicons name="chevron-forward" size={16} color={colors.slate} style={{ marginLeft: 4 }} />}
-                  </View>
-                  {v.descrizione ? <Text style={s.cardDesc}>{v.descrizione}</Text> : null}
+                  )}
                 </Pressable>
-                {!chiuso && (isIscritto ? (
-                  <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
-                ) : (
-                  <Button title={v.tipoIscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'} onPress={() => avviaIscrizione(v)} style={{ marginTop: Spacing.md }} />
-                ))}
-              </Card>
-            </React.Fragment>
+
+                <Pressable onPress={() => router.push(`/eventi/${v.tipo}/${v.id}`)} style={s.cardInfo}>
+                  <Text style={s.cardName} numberOfLines={1}>{v.nome}</Text>
+                  <Muted style={s.cardRiga}>
+                    {ETICHETTA_TIPO[v.tipo]}{v.sport ? ` · ${v.sport}` : ''}
+                    {v.aperturaIscrizioni ? ` · iscr. dal ${formattaDataBreve(v.aperturaIscrizioni)}` : ''}
+                    {v.chiusuraIscrizioni ? ` al ${formattaDataBreve(v.chiusuraIscrizioni)}` : ''}
+                  </Muted>
+                  <Muted style={s.cardRiga}>
+                    {v.dataInizio ? `Inizio ${formattaDataBreve(v.dataInizio)} · ` : ''}{v.formato}
+                  </Muted>
+                </Pressable>
+
+                <Pressable onPress={() => router.push(`/eventi/${v.tipo}/${v.id}`)} style={s.cardDestra}>
+                  {tabE === 'miei' ? (
+                    <View style={[s.pill, { backgroundColor: (eIscritto(v) && posizioni[`${v.tipo}:${v.id}`] ? colors.gold : colors.slate) + '22' }]}>
+                      <Text style={[s.pillText, { color: eIscritto(v) && posizioni[`${v.tipo}:${v.id}`] ? colors.gold : colors.slateLight }]}>{etichettaAvanzamento(v)}</Text>
+                    </View>
+                  ) : (
+                    <View style={[s.pill, { backgroundColor: colore + '22' }]}>
+                      <Text style={[s.pillText, { color: colore }]}>{ETICHETTA_STATO_ISCRIZIONI[stato]}</Text>
+                    </View>
+                  )}
+                  <Ionicons name="chevron-forward" size={16} color={colors.slate} style={{ marginTop: 6 }} />
+                </Pressable>
+              </View>
+            </Card>
           );
         })}
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {coppiaPer && (
-        <ModaleCoppia
-          voce={coppiaPer}
-          meId={me?.id ?? ''}
-          onChiudi={() => setCoppiaPer(null)}
-          onConferma={(partnerId) => iscriviti(coppiaPer, partnerId)}
-          colors={colors} glass={glass} scheme={scheme}
-        />
-      )}
+      {/* Popup locandina (fix utente esplicito: "deve ingrandirsi come
+          pop-up al tocco"). */}
+      <Modal visible={!!locandinaAperta} transparent animationType="fade" onRequestClose={() => setLocandinaAperta(null)}>
+        <Pressable style={s.locandinaSfondo} onPress={() => setLocandinaAperta(null)}>
+          {locandinaAperta && <Image source={{ uri: locandinaAperta }} style={s.locandinaGrande} resizeMode="contain" />}
+        </Pressable>
+      </Modal>
 
       {mostraZona && (
         <ModaleZona
@@ -441,75 +419,6 @@ function ModaleZona({ centri, applicata, onChiudi, onApplica, colors, glass, sch
   );
 }
 
-// Scelta del compagno per un'iscrizione in coppia — stesso pattern di
-// ricerca già usato in "Invita giocatori" (prenota.tsx) e "Cerca
-// giocatori" (amici.tsx). "Iscriviti da solo" resta un'opzione esplicita:
-// CampionatoPartecipante/TorneoPartecipante hanno giocatore_2_id
-// nullable, il gestionale mostra normalmente una coppia incompleta in
-// attesa (fix utente esplicito: "permetti ai giocatori di iscriversi in
-// autonomia" — non deve essere bloccato dal non avere già un compagno).
-function ModaleCoppia({ voce, meId, onChiudi, onConferma, colors, glass, scheme }: {
-  voce: Voce; meId: string; onChiudi: () => void; onConferma: (partnerId?: string) => void;
-  colors: AppColors; glass: ReturnType<typeof useTheme>['glass']; scheme: ReturnType<typeof useTheme>['scheme'];
-}) {
-  const s = useMemo(() => makeStyles(colors), [colors]);
-  const [q, setQ] = useState('');
-  const [risultati, setRisultati] = useState<Giocatore[]>([]);
-  const [cercando, setCercando] = useState(false);
-
-  const cerca = async (text: string) => {
-    setQ(text);
-    if (text.trim().length < 2) { setRisultati([]); return; }
-    setCercando(true);
-    const r = await cercaGiocatori(text);
-    setRisultati(r.filter((g) => g.id !== meId));
-    setCercando(false);
-  };
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onChiudi}>
-      <Pressable style={s.modaleSfondo} onPress={onChiudi}>
-        <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
-          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={s.modaleTitolo}>Con chi giochi?</Text>
-            <Muted style={{ marginBottom: Spacing.md }}>{voce.nome} — formato a coppie</Muted>
-
-            <Input icon="search" placeholder="Cerca il tuo compagno per nome…" value={q} onChangeText={cerca} autoFocus style={{ marginBottom: Spacing.md }} />
-
-            {q.trim().length >= 2 && (
-              cercando ? null : risultati.length === 0 ? (
-                <Muted style={{ textAlign: 'center', marginBottom: Spacing.md }}>Nessun giocatore trovato.</Muted>
-              ) : (
-                <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
-                  {risultati.map((g) => (
-                    <Pressable key={g.id} onPress={() => onConferma(g.id)}>
-                      <Card style={s.invitoCard}>
-                        <Avatar name={`${g.nome} ${g.cognome}`} size={40} genere={g.genere} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.cardName}>{g.nome} {g.cognome}</Text>
-                          {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
-                        </View>
-                        <Ionicons name="add-circle" size={24} color={colors.gold} />
-                      </Card>
-                    </Pressable>
-                  ))}
-                </View>
-              )
-            )}
-
-            <Button title="Iscriviti da solo (aggiungo il compagno dopo)" variant="ghost" onPress={() => onConferma(undefined)} style={{ marginBottom: Spacing.sm }} />
-            <Button title="Annulla" variant="ghost" onPress={onChiudi} />
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function divisione(d: string) { return d === 'misto' ? 'Misto' : d === 'maschile' ? 'Maschile' : 'Femminile'; }
-
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
@@ -527,19 +436,25 @@ function makeStyles(colors: AppColors) {
     demoBadge: { marginBottom: Spacing.lg },
     demoText: { color: colors.gold, fontWeight: '700', fontSize: Font.small },
     empty: { color: colors.slate, textAlign: 'center', marginTop: Spacing.xxl, fontSize: Font.body },
-    sottocategoria: { color: colors.slate, fontSize: Font.small, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: Spacing.md, marginBottom: Spacing.xs, marginLeft: Spacing.xs },
     card: { marginBottom: Spacing.md },
-    cardHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    cardRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    // Locandina (fix utente esplicito: "gli eventi a SX devono avere la
+    // locandina") — stessa dimensione sia con immagine reale (solo evento
+    // custom) sia con l'icona di tipo di ripiego (campionato/torneo, che
+    // non hanno ancora un campo immagine nel modello dati).
+    locandinaWrap: { width: 52, height: 52, borderRadius: Radius.md, overflow: 'hidden' },
+    locandina: { width: '100%', height: '100%' },
+    cardInfo: { flex: 1, minWidth: 0 },
     cardName: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800' },
-    cardDesc: { color: colors.slateLight, fontSize: Font.small, marginTop: Spacing.md, lineHeight: 20 },
+    cardRiga: { marginTop: 2 },
+    cardDestra: { alignItems: 'flex-end' },
     pill: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radius.pill },
     pillText: { fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },
-    iscritto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: Spacing.md, paddingVertical: Spacing.sm },
-    iscrittoText: { color: colors.green, fontWeight: '700' },
+    locandinaSfondo: { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', alignItems: 'center', justifyContent: 'center', padding: Spacing.lg },
+    locandinaGrande: { width: '100%', height: '80%' },
     modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
     modaleBox: { width: '100%', maxWidth: 360, maxHeight: '80%', borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' } as any,
     modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: 4 },
-    invitoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
     sottoTitolo: { color: colors.slate, fontSize: Font.small, fontWeight: '700', marginBottom: 4 },
     opzioneRigaCompatta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 8 },
     opzioneLabel: { color: colors.navyDeep, fontSize: Font.small, fontWeight: '700' },

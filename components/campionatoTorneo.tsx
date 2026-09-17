@@ -1,10 +1,14 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { Muted, Pill, Chip } from './ui';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import { Muted, Pill, Chip, Button, Input, Avatar } from './ui';
 import { useTheme } from '../lib/theme';
+import { getVotiPartita, votaPartita, cercaGiocatori } from '../lib/api';
+import { categoriaRanking, CATEGORIE_RANKING } from '../lib/stars';
 import { Radius, Spacing, Font, AppColors } from '../constants/theme';
-import type { CampionatoPartecipante, TorneoPartecipante, Giocatore, RigaClassifica } from '../types/models';
+import type { CampionatoPartecipante, TorneoPartecipante, Giocatore, RigaClassifica, VotoPartita } from '../types/models';
 
 // Componenti condivisi tra il dettaglio Campionato e il dettaglio Torneo
 // (app/(tabs)/eventi/campionato/[id].tsx, app/(tabs)/eventi/torneo/[id].tsx)
@@ -92,8 +96,14 @@ export function calcolaClassificaBracket(
   return [...righe.values()].sort((a, b) => b.punti - a.punti || (b.set_vinti - b.set_persi) - (a.set_vinti - a.set_persi) || a.ranking - b.ranking);
 }
 
-export function RigaMatch({ match, nomeA, nomeB, compatto }: {
-  match: MatchComune; nomeA: string; nomeB: string; compatto?: boolean;
+// `onPress` (fix utente esplicito, Eventi "In corso": "pigiando su ogni
+// singola partita ogni giocatore può dichiarare una preferenza sulla
+// coppia vincitrice") — assente per i bye, che non hanno un vero
+// avversario su cui votare. Il chiamante decide cosa succede al tap
+// (apre ModaleVotoPartita sotto), RigaMatch resta puramente di
+// presentazione.
+export function RigaMatch({ match, nomeA, nomeB, compatto, onPress }: {
+  match: MatchComune; nomeA: string; nomeB: string; compatto?: boolean; onPress?: () => void;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -116,7 +126,7 @@ export function RigaMatch({ match, nomeA, nomeB, compatto }: {
   // "Cri…"/"Salv…" nel tabellone).
   if (compatto) {
     return (
-      <View style={s.matchRigaCompatta}>
+      <Pressable style={s.matchRigaCompatta} onPress={onPress} disabled={!onPress}>
         <View style={s.matchLatoCompatto}>
           <Text style={[s.matchNomeCompatto, vinceA && s.matchNomeVincitore]} numberOfLines={2}>{nomeA}</Text>
           {giocato && <Text style={[s.matchSetCompatto, vinceA && s.matchNomeVincitore]}>{match.stato === 'forfait' ? (vinceA ? '' : 'W.O.') : match.set_a ?? ''}</Text>}
@@ -126,12 +136,12 @@ export function RigaMatch({ match, nomeA, nomeB, compatto }: {
           {giocato && <Text style={[s.matchSetCompatto, vinceB && s.matchNomeVincitore]}>{match.stato === 'forfait' ? (vinceB ? '' : 'W.O.') : match.set_b ?? ''}</Text>}
         </View>
         {!giocato && <Pill label="Da giocare" />}
-      </View>
+      </Pressable>
     );
   }
 
   return (
-    <View style={s.matchRiga}>
+    <Pressable style={s.matchRiga} onPress={onPress} disabled={!onPress}>
       <View style={s.matchLati}>
         <Text style={[s.matchNome, vinceA && s.matchNomeVincitore]} numberOfLines={2}>{nomeA}</Text>
         <View style={s.matchCentro}>
@@ -144,7 +154,7 @@ export function RigaMatch({ match, nomeA, nomeB, compatto }: {
         <Text style={[s.matchNome, s.matchNomeB, vinceB && s.matchNomeVincitore]} numberOfLines={2}>{nomeB}</Text>
       </View>
       {!giocato && <Pill label="Da giocare" />}
-    </View>
+    </Pressable>
   );
 }
 
@@ -201,7 +211,7 @@ const HEADER_H = 30; // spazio riservato in alto per il titolo del turno
  *  cliccabile per saltare direttamente a un turno (fix utente esplicito:
  *  "l'indicazione della fase cliccabile così da poter andare alla fase
  *  direttamente e non solo a scorrimento"). */
-export function Tabellone({ colonne }: { colonne: ColonnaTabellone[] }) {
+export function Tabellone({ colonne, onMatchPress }: { colonne: ColonnaTabellone[]; onMatchPress?: (m: MatchComune) => void }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
@@ -254,7 +264,7 @@ export function Tabellone({ colonne }: { colonne: ColonnaTabellone[] }) {
               {col.match.map((m, i) => (
                 <View key={m.id} style={{ position: 'absolute', left: xOf(r), top: centerY(r, i) - CARD_H / 2, width: COL_W, minHeight: CARD_H }}>
                   <View style={s.bracketCard}>
-                    <RigaMatch match={m} nomeA={col.nomeA(m.partecipante_a_id)} nomeB={col.nomeB(m.partecipante_b_id)} compatto />
+                    <RigaMatch match={m} nomeA={col.nomeA(m.partecipante_a_id)} nomeB={col.nomeB(m.partecipante_b_id)} compatto onPress={m.bye ? undefined : () => onMatchPress?.(m)} />
                   </View>
                 </View>
               ))}
@@ -263,6 +273,201 @@ export function Tabellone({ colonne }: { colonne: ColonnaTabellone[] }) {
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+// ============================================================
+// Voto "chi vince questa partita" (fix utente esplicito, Eventi "In
+// corso") — apribile dal tap su una RigaMatch/card di Tabellone non-bye
+// (vedi onPress sopra). Percentuali sempre visibili (anche a match già
+// giocato, come "quanti ci avevano preso"); si può votare/cambiare voto
+// solo finché il match è "programmato" — a risultato inserito il tap sui
+// due lati resta disabilitato, non ha più senso "prevedere" un esito noto.
+// ============================================================
+export function ModaleVotoPartita({ match, tipoMatch, nomeA, nomeB, meId, onChiudi }: {
+  match: MatchComune; tipoMatch: 'campionato' | 'torneo'; nomeA: string; nomeB: string; meId?: string; onChiudi: () => void;
+}) {
+  const { colors, glass, scheme } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+  const [voti, setVoti] = useState<VotoPartita[]>([]);
+  const [caricando, setCaricando] = useState(true);
+  const [votando, setVotando] = useState(false);
+
+  useEffect(() => { getVotiPartita(match.id).then((v) => { setVoti(v); setCaricando(false); }); }, [match.id]);
+
+  const votiA = voti.filter((v) => v.voto === 'A').length;
+  const votiB = voti.filter((v) => v.voto === 'B').length;
+  const totale = votiA + votiB;
+  const percA = totale ? Math.round((votiA / totale) * 100) : 0;
+  const percB = totale ? 100 - percA : 0;
+  const mioVoto = voti.find((v) => v.giocatore_id === meId)?.voto ?? null;
+  const puoiVotare = match.stato === 'programmato' && !!meId && !votando;
+
+  const vota = async (scelta: 'A' | 'B') => {
+    if (!meId || votando || scelta === mioVoto) return;
+    setVotando(true);
+    const res = await votaPartita({ matchId: match.id, tipoMatch, giocatoreId: meId, voto: scelta });
+    if (res.ok) setVoti((cur) => [...cur.filter((v) => v.giocatore_id !== meId), { id: `tmp-${meId}`, match_id: match.id, tipo_match: tipoMatch, giocatore_id: meId, voto: scelta }]);
+    setVotando(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onChiudi}>
+      <Pressable style={s.modaleSfondo} onPress={onChiudi}>
+        <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
+          <Text style={s.modaleTitolo}>Chi vince?</Text>
+          {caricando ? (
+            <Muted style={{ textAlign: 'center' }}>Carico…</Muted>
+          ) : (
+            <>
+              <VotoRiga nome={nomeA} percentuale={percA} numeroVoti={votiA} attivo={mioVoto === 'A'} onPress={() => vota('A')} disabled={!puoiVotare} colors={colors} s={s} />
+              <VotoRiga nome={nomeB} percentuale={percB} numeroVoti={votiB} attivo={mioVoto === 'B'} onPress={() => vota('B')} disabled={!puoiVotare} colors={colors} s={s} />
+              <Muted style={{ textAlign: 'center', marginTop: Spacing.md }}>
+                {totale} {totale === 1 ? 'voto' : 'voti'}{match.stato !== 'programmato' ? ' · partita già giocata' : ''}
+              </Muted>
+            </>
+          )}
+          <Button title="Chiudi" variant="ghost" onPress={onChiudi} style={{ marginTop: Spacing.lg }} />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function VotoRiga({ nome, percentuale, numeroVoti, attivo, onPress, disabled, colors, s }: {
+  nome: string; percentuale: number; numeroVoti: number; attivo: boolean; onPress: () => void; disabled: boolean;
+  colors: AppColors; s: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={[s.votoRiga, attivo && s.votoRigaAttiva]}>
+      <View style={s.votoTestata}>
+        <Text style={[s.votoNome, attivo && { color: colors.gold }]} numberOfLines={1}>{nome}</Text>
+        <Text style={[s.votoPercentuale, attivo && { color: colors.gold }]}>{percentuale}%</Text>
+      </View>
+      <View style={s.votoBarraSfondo}>
+        <View style={[s.votoBarra, { width: `${percentuale}%`, backgroundColor: attivo ? colors.gold : colors.slate }]} />
+      </View>
+      <Muted style={{ fontSize: Font.tiny }}>{numeroVoti} {numeroVoti === 1 ? 'voto' : 'voti'}{attivo ? ' · il tuo' : ''}</Muted>
+    </Pressable>
+  );
+}
+
+// ============================================================
+// Elenco partecipanti diviso per categoria di ranking, dal più forte al
+// più debole (fix utente esplicito, Eventi "Iscriviti": "elenco
+// partecipanti diviso per categorie con ranking visibile e se ci sono
+// coppie già formate devo vedere le coppie con il ranking di coppia in
+// ordine di ranking, dal più alto al più basso") — ogni riga È già una
+// coppia quando il formato la prevede (CampionatoPartecipante/
+// TorneoPartecipante/EventoPartecipante rappresentano tutti "un'iscrizione",
+// coppia o singolo in attesa), quindi un solo elenco ordinato per ranking
+// soddisfa entrambe le richieste insieme — non serve una lista separata.
+// ============================================================
+export interface RigaPartecipanteGenerica { id: string; nome: string; ranking: number; mio?: boolean }
+
+export function ListaPartecipantiPerCategoria({ righe }: { righe: RigaPartecipanteGenerica[] }) {
+  const { colors } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+  const gruppi = useMemo(() => {
+    const mappa = new Map<string, RigaPartecipanteGenerica[]>();
+    for (const r of [...righe].sort((a, b) => b.ranking - a.ranking)) {
+      const cat = categoriaRanking(r.ranking);
+      if (!mappa.has(cat)) mappa.set(cat, []);
+      mappa.get(cat)!.push(r);
+    }
+    return CATEGORIE_RANKING.filter((c) => mappa.has(c)).map((c) => ({ categoria: c, righe: mappa.get(c)! }));
+  }, [righe]);
+
+  if (righe.length === 0) return <Muted style={{ textAlign: 'center' }}>Nessun iscritto ancora.</Muted>;
+  return (
+    <View>
+      {gruppi.map((g) => (
+        <View key={g.categoria} style={{ marginBottom: Spacing.md }}>
+          <Text style={s.categoriaTitolo}>{g.categoria}</Text>
+          {g.righe.map((r) => (
+            <View key={r.id} style={s.partRiga}>
+              <Text style={[s.partNome, r.mio && s.partNomeMio]} numberOfLines={1}>{r.nome}</Text>
+              <Text style={s.partRanking}>{r.ranking.toFixed(2)}</Text>
+              {r.mio && <Ionicons name="person" size={16} color={colors.gold} />}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ============================================================
+// Scelta del compagno per un'iscrizione in coppia (spostata qui da
+// eventi.tsx: serve ora anche ai 3 dettagli evento/campionato/torneo, non
+// più solo alla lista) — stesso pattern di ricerca già usato in "Invita
+// giocatori" (prenota.tsx) e "Cerca giocatori" (amici.tsx). `obbligaCoppia`
+// (fix utente esplicito: EventoPartecipante.giocatore_2_id è NOT NULL a
+// differenza di CampionatoPartecipante/TorneoPartecipante) nasconde
+// l'opzione "iscriviti da solo", che per un evento custom fallirebbe
+// sempre lato backend.
+// ============================================================
+export function ModaleCoppia({ titolo, sottotitolo, meId, obbligaCoppia, onChiudi, onConferma }: {
+  titolo: string; sottotitolo: string; meId: string; obbligaCoppia?: boolean; onChiudi: () => void; onConferma: (partnerId?: string) => void;
+}) {
+  const { colors, glass, scheme } = useTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+  const [q, setQ] = useState('');
+  const [risultati, setRisultati] = useState<Giocatore[]>([]);
+  const [cercando, setCercando] = useState(false);
+
+  const cerca = async (text: string) => {
+    setQ(text);
+    if (text.trim().length < 2) { setRisultati([]); return; }
+    setCercando(true);
+    const r = await cercaGiocatori(text);
+    setRisultati(r.filter((g) => g.id !== meId));
+    setCercando(false);
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onChiudi}>
+      <Pressable style={s.modaleSfondo} onPress={onChiudi}>
+        <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={s.modaleTitolo}>Con chi giochi?</Text>
+            <Muted style={{ marginBottom: Spacing.md }}>{titolo} — {sottotitolo}</Muted>
+
+            <Input icon="search" placeholder="Cerca il tuo compagno per nome…" value={q} onChangeText={cerca} autoFocus style={{ marginBottom: Spacing.md }} />
+
+            {q.trim().length >= 2 && (
+              cercando ? null : risultati.length === 0 ? (
+                <Muted style={{ textAlign: 'center', marginBottom: Spacing.md }}>Nessun giocatore trovato.</Muted>
+              ) : (
+                <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
+                  {risultati.map((g) => (
+                    <Pressable key={g.id} onPress={() => onConferma(g.id)}>
+                      <View style={s.invitoCard}>
+                        <Avatar name={`${g.nome} ${g.cognome}`} size={40} genere={g.genere} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.partNome}>{g.nome} {g.cognome}</Text>
+                          {g.profilo?.nickname ? <Muted>"{g.profilo.nickname}"</Muted> : null}
+                        </View>
+                        <Ionicons name="add-circle" size={24} color={colors.gold} />
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )
+            )}
+
+            {!obbligaCoppia && (
+              <Button title="Iscriviti da solo (aggiungo il compagno dopo)" variant="ghost" onPress={() => onConferma(undefined)} style={{ marginBottom: Spacing.sm }} />
+            )}
+            <Button title="Annulla" variant="ghost" onPress={onChiudi} />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -296,5 +501,22 @@ function makeStyles(colors: AppColors) {
       padding: Spacing.sm, borderRadius: Radius.md, backgroundColor: colors.navyCard,
       borderWidth: 1, borderColor: colors.navyLine, justifyContent: 'center',
     },
+    // Modale voto/coppia — stesso linguaggio "vetro" già in uso altrove.
+    modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+    modaleBox: { width: '100%', maxWidth: 380, maxHeight: '80%', borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' } as any,
+    modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
+    votoRiga: { paddingVertical: Spacing.sm, gap: 4, borderRadius: Radius.sm, paddingHorizontal: Spacing.sm },
+    votoRigaAttiva: { backgroundColor: colors.gold + '14' },
+    votoTestata: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    votoNome: { flex: 1, color: colors.navyDeep, fontSize: Font.body, fontWeight: '700' },
+    votoPercentuale: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '900' },
+    votoBarraSfondo: { height: 8, borderRadius: 4, backgroundColor: colors.navyLine + '33', overflow: 'hidden' },
+    votoBarra: { height: '100%', borderRadius: 4 },
+    categoriaTitolo: { color: colors.slate, fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
+    partRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.navyLine + '18' },
+    partNome: { flex: 1, color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
+    partNomeMio: { color: colors.gold, fontWeight: '800' },
+    partRanking: { color: colors.slate, fontSize: Font.small, fontWeight: '700' },
+    invitoCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: 8 },
   });
 }

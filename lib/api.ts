@@ -17,7 +17,7 @@ import type {
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
   NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione,
   Campionato, Torneo, CampionatoPartecipante, TorneoPartecipante, CampionatoGirone, CampionatoGiornata, CampionatoMatch,
-  TorneoRound, TorneoMatch, RigaClassifica,
+  TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -1195,17 +1195,72 @@ export async function getEventiIscritti(giocatoreId: string): Promise<EventoCust
   return (eventi ?? []).filter((e) => eventoIds.has(e.id));
 }
 
-export async function iscrivitiEvento(eventoId: string, giocatoreId: string): Promise<{ ok: boolean; error?: string }> {
+/** A differenza di campionato/torneo, per un evento custom `giocatore_2_id`
+ *  è NOT NULL lato backend (EventoPartecipante — coppia_fissa sempre
+ *  completa, niente "iscriviti da solo in attesa di compagno"): `partnerId`
+ *  qui è quindi obbligatorio, non opzionale (fix di un bug reale — prima
+ *  mancava del tutto, ranking_coppia era un placeholder a 0 e la POST
+ *  falliva sempre con 422 non appena il backend validava la coppia). */
+export async function iscrivitiEvento(eventoId: string, giocatoreId: string, partnerId: string, sport: string): Promise<{ ok: boolean; error?: string }> {
   if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
-  // NOTA/limite noto: il backend richiede sempre una coppia completa
-  // (giocatore_1_id + giocatore_2_id) per un'iscrizione — coerente col
-  // motore tornei del gestionale, che genera i bracket solo su coppie
-  // fisse. L'iscrizione "da solo" (in attesa di un compagno) non è
-  // supportata: qui sotto propaghiamo l'errore 422 del backend così com'è,
-  // non lo mascheriamo — serve una decisione di prodotto prima di poter
-  // sbloccare questo flusso.
+  const [r1, r2] = await Promise.all([getRankingAttuale(giocatoreId, sport), getRankingAttuale(partnerId, sport)]);
+  const rankingCoppia = ((r1?.ranking ?? 0) + (r2?.ranking ?? 0)) / 2;
   const { error } = await apiPost('/eventi-partecipanti', {
-    evento_id: eventoId, giocatore_1_id: giocatoreId, ranking_coppia: 0, stato: 'iscritto',
+    evento_id: eventoId, giocatore_1_id: giocatoreId, giocatore_2_id: partnerId, ranking_coppia: rankingCoppia, stato: 'iscritto',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Le coppie iscritte a UN evento custom, per il dettaglio (fix utente
+ *  esplicito: "elenco partecipanti diviso per categorie con ranking
+ *  visibile... coppie con il ranking di coppia"). */
+export async function getPartecipantiEvento(eventoId: string): Promise<EventoPartecipante[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<EventoPartecipante[]>('/eventi-partecipanti', { evento_id: eventoId });
+  return (data ?? []).filter((p) => p.stato === 'iscritto');
+}
+
+export interface DettaglioEvento { evento: EventoCustom; partecipanti: EventoPartecipante[] }
+
+/** Dettaglio di UN evento custom (fix utente esplicito, "aprendo l'evento
+ *  devo poter visualizzare il recap delle info") — a differenza di
+ *  campionato/torneo l'evento custom non ha ancora (fuori scope qui) una
+ *  vista turni/classifica/tabellone propria: il dettaglio mostra sempre
+ *  recap + iscrizione + partecipanti, indipendentemente dalla tab da cui
+ *  si è aperto. */
+export async function getEventoDettaglio(id: string): Promise<DettaglioEvento | null> {
+  if (isMock()) return null;
+  const [{ data: evento }, partecipanti] = await Promise.all([
+    apiGet<EventoCustom>(`/eventi-custom/${id}`),
+    getPartecipantiEvento(id),
+  ]);
+  if (!evento) return null;
+  return { evento, partecipanti };
+}
+
+// ---------- Voto "chi vince" su una partita di campionato/torneo (fix
+// utente esplicito, Eventi "In corso") — vedi backend/app/models/
+// voto_partita.py. Un voto per (match, giocatore): rivotare aggiorna la
+// riga esistente invece di crearne una seconda (unique constraint lato
+// backend), quindi il client controlla sempre prima con una GET.
+export async function getVotiPartita(matchId: string): Promise<VotoPartita[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<VotoPartita[]>('/voti-partita', { match_id: matchId });
+  return data ?? [];
+}
+
+export async function votaPartita(input: {
+  matchId: string; tipoMatch: 'campionato' | 'torneo'; giocatoreId: string; voto: 'A' | 'B';
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.giocatoreId)) return { ok: true };
+  const esistenti = await getVotiPartita(input.matchId);
+  const mio = esistenti.find((v) => v.giocatore_id === input.giocatoreId);
+  if (mio) {
+    const { error } = await apiPatch(`/voti-partita/${mio.id}`, { voto: input.voto });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
+  const { error } = await apiPost('/voti-partita', {
+    match_id: input.matchId, tipo_match: input.tipoMatch, giocatore_id: input.giocatoreId, voto: input.voto,
   });
   return error ? { ok: false, error: error.message } : { ok: true };
 }

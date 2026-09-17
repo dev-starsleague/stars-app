@@ -553,6 +553,17 @@ export interface TorneoPartecipante {
   stato: 'iscritto' | 'ritirato';
 }
 
+/** Voto di un giocatore su chi pensa vincerà un match non ancora giocato
+ *  (fix utente esplicito, Eventi "In corso": preferenza sulla coppia
+ *  vincitrice + percentuale voti) — vedi backend/app/models/voto_partita.py. */
+export interface VotoPartita {
+  id: string;
+  match_id: string;
+  tipo_match: 'campionato' | 'torneo';
+  giocatore_id: string;
+  voto: 'A' | 'B';
+}
+
 // Dettaglio campionato/torneo (classifica, giornate/round, tabellone) —
 // stessa forma esatta dei modelli del gestionale (stars-system/backend/
 // app/models/campionato.py, torneo.py), solo i campi che la vista di

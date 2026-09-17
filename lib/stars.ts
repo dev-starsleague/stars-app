@@ -108,6 +108,26 @@ export function categoriaRanking(valore: number | null | undefined): string {
 // livello.
 export const CATEGORIE_RANKING = ['8⭐', '7⭐', '6⭐', '5⭐', '4⭐', '3⭐', '2⭐', '1⭐', 'Spark', 'Non valutato'];
 
+// Stato iscrizioni di un evento/campionato/torneo (fix utente esplicito,
+// Eventi "Iscriviti": "in arrivo" arancione, "aperte" verde, "sold out" o
+// "chiuso" rosso) — derivato dalle date/conteggio invece che dal solo
+// `stato` grezzo del backend (bozza|iscrizioni_aperte|...), che non
+// distingue "non ancora aperte" da "aperte", unica fonte per le 3 card
+// (evento/campionato/torneo) e per il dettaglio di ciascuna.
+export type StatoIscrizioni = 'in_arrivo' | 'aperte' | 'sold_out' | 'chiuso';
+export function statoIscrizioni(
+  aperturaIso: string | null, chiusuraIso: string | null, iscrittiCount: number, max?: number | null
+): StatoIscrizioni {
+  const ora = Date.now();
+  if (aperturaIso && new Date(aperturaIso).getTime() > ora) return 'in_arrivo';
+  if (max && iscrittiCount >= max) return 'sold_out';
+  if (chiusuraIso && new Date(chiusuraIso).getTime() < ora) return 'chiuso';
+  return 'aperte';
+}
+export const ETICHETTA_STATO_ISCRIZIONI: Record<StatoIscrizioni, string> = {
+  in_arrivo: 'In arrivo', aperte: 'Aperte', sold_out: 'Sold out', chiuso: 'Chiuso',
+};
+
 export const BADGE_CATALOGO = [
   { id: 'b1', nome: 'Prima partita', descrizione: 'Ha giocato la sua prima partita PSL', icona: '🎾' },
   { id: 'b2', nome: 'Prima vittoria', descrizione: 'Ha vinto la sua prima partita', icona: '🏆' },
