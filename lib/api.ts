@@ -15,7 +15,7 @@ import type {
   MatchRanking, Prenotazione, RankingGiocatore, RankingOverride, Amicizia, StarsProfilo,
   CircuitoNazionale, RigaClassificaNazionale, Tessera, ShopProdotto, AbbonamentoTemplate,
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
-  NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione,
+  NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione, ProdottoPrivato,
   Campionato, Torneo, CampionatoPartecipante, TorneoPartecipante, CampionatoGirone, CampionatoGiornata, CampionatoMatch,
   TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante,
 } from '../types/models';
@@ -1553,6 +1553,38 @@ export async function getTotaleCoinSpeso(giocatoreId: string): Promise<number> {
   return (data ?? []).filter((t) => t.importo < 0).reduce((acc, t) => acc - t.importo, 0);
 }
 
+/** Totale Star Coin guadagnati da sempre — somma di tutti gli accrediti
+ *  (fix utente esplicito, Shop: box sinistra "Il tuo saldo" apre le
+ *  transazioni in entrata). Non esisteva un equivalente di
+ *  getTotaleCoinSpeso per gli accrediti. */
+export async function getTotaleCoinGuadagnato(giocatoreId: string): Promise<number> {
+  if (isMock()) return 0;
+  const { data } = await apiGet<CoinTransazione[]>('/coin-transazioni', { giocatore_id: giocatoreId });
+  return (data ?? []).filter((t) => t.importo > 0).reduce((acc, t) => acc + t.importo, 0);
+}
+
+/** Elenco transazioni coin del giocatore, più recenti prima (fix utente
+ *  esplicito: tap sulle box saldo/utilizzati apre le transazioni vere, non
+ *  solo il totale) — `entrata` filtra per segno, il chiamante decide quale
+ *  delle due liste mostrare (nessun nuovo endpoint: /coin-transazioni
+ *  esiste già, qui solo il filtro/ordinamento lato client). */
+export async function getCoinTransazioni(giocatoreId: string, entrata: boolean): Promise<CoinTransazione[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<CoinTransazione[]>('/coin-transazioni', { giocatore_id: giocatoreId });
+  return sortBy((data ?? []).filter((t) => (entrata ? t.importo > 0 : t.importo < 0)), (t) => t.created_at, { desc: true });
+}
+
+/** Motivo leggibile di una transazione (fix utente esplicito: elenco
+ *  transazioni) — `riferimento.motivo` quando c'è (scritto lato backend
+ *  per ogni movimento reale, es. acquisto/rettifica/bonus), altrimenti
+ *  ricade sul `tipo` rettifica, altrimenti un'etichetta generica. */
+export function motivoTransazione(t: CoinTransazione): string {
+  if (t.riferimento?.motivo) return t.riferimento.motivo;
+  if (t.tipo === 'rettifica_piu') return 'Rettifica staff (accredito)';
+  if (t.tipo === 'rettifica_meno') return 'Rettifica staff (addebito)';
+  return t.importo > 0 ? 'Accredito' : 'Addebito';
+}
+
 // ---------- Shop ----------
 
 /** Centri preferiti del giocatore — vivono nel JSON self-service `profilo`
@@ -1568,6 +1600,59 @@ export async function toggleCentroPreferito(giocatore: Giocatore, centroId: stri
   const nuovi = attuali.includes(centroId) ? attuali.filter((id) => id !== centroId) : [...attuali, centroId];
   await updateProfilo(giocatore.id, { profilo: { centri_preferiti: nuovi } } as any);
   return nuovi;
+}
+
+// ---------- Shop Privé (fix utente esplicito: "prodotti messi in vendita
+// dai privati") — annunci tra giocatori, separati dallo shop del centro:
+// venditore = giocatore, prezzo in €, nessun acquisto in-app (vedi
+// backend/app/models/prodotto_privato.py). ----------
+
+/** Carica la foto di un annuncio privato — stesso endpoint generico di
+ *  caricaFotoProfilo, qui con un nome a sé per chiarezza al chiamante. */
+export async function caricaFotoProdottoPrivato(uri: string, mimeType: string): Promise<{ url: string | null; error?: string }> {
+  if (isMock()) return { url: uri };
+  const { data, error } = await apiUpload<{ url: string }>('/upload-immagine', uri, mimeType);
+  return error ? { url: null, error: error.message } : { url: data?.url ?? null };
+}
+
+/** Annunci privati attivi, con venditore e centro di riferimento già
+ *  risolti (fix utente esplicito: "filtrabili per tipologia, zona") — il
+ *  filtro vero e proprio (categoria/zona/sport) resta lato chiamante,
+ *  come già per prodotti/eventi altrove nell'app. */
+export async function getProdottiPrivati(): Promise<ProdottoPrivato[]> {
+  if (isMock()) return [];
+  const [{ data: prodotti }, giocatori, centri] = await Promise.all([
+    apiGet<ProdottoPrivato[]>('/prodotti-privati', { stato: 'attivo' }),
+    getGiocatori(),
+    getCentri(),
+  ]);
+  const giocatoriMap = new Map(giocatori.map((g) => [g.id, g]));
+  const centriMap = new Map(centri.map((c) => [c.id, c]));
+  return sortBy(
+    (prodotti ?? []).map((p) => ({ ...p, venditore: giocatoriMap.get(p.giocatore_id), centro: p.centro_id ? centriMap.get(p.centro_id) : undefined })),
+    (p) => p.created_at, { desc: true }
+  );
+}
+
+export async function creaProdottoPrivato(input: {
+  giocatoreId: string; nome: string; descrizione?: string | null; categoria: string; condizione: 'nuovo' | 'usato';
+  prezzoEuro: number; immagineUrl?: string | null; sport?: string | null; centroId?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(input.giocatoreId)) return { ok: true };
+  const { error } = await apiPost('/prodotti-privati', {
+    giocatore_id: input.giocatoreId, nome: input.nome, descrizione: input.descrizione ?? null, categoria: input.categoria,
+    condizione: input.condizione, prezzo_euro: input.prezzoEuro, immagine_url: input.immagineUrl ?? null,
+    sport: input.sport ?? null, centro_id: input.centroId ?? null, stato: 'attivo',
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Segna un annuncio come venduto o lo rimuove (fix utente esplicito:
+ *  "possibilità di caricare i prodotti" implica anche poterli togliere una
+ *  volta venduti) — `stato` resta "storico" invece di un vero DELETE. */
+export async function aggiornaProdottoPrivato(id: string, stato: 'venduto' | 'rimosso'): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await apiPatch(`/prodotti-privati/${id}`, { stato });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 /** Prodotti attivi dello shop di un centro. */

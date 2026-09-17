@@ -8,14 +8,19 @@ import { useAuth } from '../../lib/auth';
 import { useSport } from '../../lib/sport';
 import { useTheme } from '../../lib/theme';
 import { apiUrl } from '../../lib/apiClient';
-import { getCentri, getProdottiShop, getAbbonamentiShop, getStarsCoinPerCentro, getTotaleCoinSpeso, centriPreferiti, toggleCentroPreferito, acquistaProdotto, acquistaAbbonamento } from '../../lib/api';
+import {
+  getCentri, getProdottiShop, getAbbonamentiShop, getStarsCoinPerCentro, getTotaleCoinSpeso, getTotaleCoinGuadagnato,
+  getCoinTransazioni, motivoTransazione, centriPreferiti, toggleCentroPreferito, acquistaProdotto, acquistaAbbonamento,
+} from '../../lib/api';
 import { coinInEuro, formattaEuro } from '../../lib/stars';
 import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented, Button } from '../../components/ui';
+import { SezioneShopPrive } from '../../components/shopPrive';
 import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
-import type { Centro, ShopProdotto, AbbonamentoTemplate } from '../../types/models';
+import type { Centro, ShopProdotto, AbbonamentoTemplate, CoinTransazione } from '../../types/models';
 
+type SezioneShop = 'club' | 'prive';
 type SchedaShop = 'prodotti' | 'abbonamenti';
 type FiltroCondizione = 'tutti' | 'nuovo' | 'usato';
 type VistaProdotti = 'griglia' | 'elenco';
@@ -53,8 +58,18 @@ export default function StarsCoin() {
   // (fix utente esplicito) — vedi components/HomeCarousel.tsx.
   const params = useLocalSearchParams<{ centroId?: string; prodottoId?: string; abbonamentoId?: string }>();
 
+  // Club / Privé (fix utente esplicito: "Shop deve dividersi in 'Shop
+  // Club' e 'Shop privè'") — un livello sopra la scelta centro esistente,
+  // che resta invariata dentro "club".
+  const [sezioneShop, setSezioneShop] = useState<SezioneShop>('club');
   const [saldi, setSaldi] = useState<{ centro: Centro; saldo: number }[]>([]);
   const [totaleSpeso, setTotaleSpeso] = useState(0);
+  const [totaleGuadagnato, setTotaleGuadagnato] = useState(0);
+  // Transazioni: tap sulla box saldo/utilizzati apre l'elenco vero (fix
+  // utente esplicito) — 'entrata' = accrediti (box sx), 'uscita' = addebiti
+  // (box dx). null = modale chiusa.
+  const [transazioniAperte, setTransazioniAperte] = useState<'entrata' | 'uscita' | null>(null);
+  const [transazioni, setTransazioni] = useState<CoinTransazione[] | null>(null);
   const [centri, setCentri] = useState<Centro[]>([]);
   const [preferiti, setPreferiti] = useState<Set<string>>(new Set());
   const [soloPreferiti, setSoloPreferiti] = useState(false);
@@ -83,9 +98,17 @@ export default function StarsCoin() {
     if (!me) return;
     getStarsCoinPerCentro(me.id).then(setSaldi);
     getTotaleCoinSpeso(me.id).then(setTotaleSpeso);
+    getTotaleCoinGuadagnato(me.id).then(setTotaleGuadagnato);
     getCentri().then(setCentri);
     setPreferiti(centriPreferiti(me));
   }, [me]);
+
+  const apriTransazioni = (t: 'entrata' | 'uscita') => {
+    if (!me) return;
+    setTransazioniAperte(t);
+    setTransazioni(null);
+    getCoinTransazioni(me.id, t === 'entrata').then(setTransazioni);
+  };
 
   useEffect(() => {
     if (!centroShop) { setProdotti(null); setAbbonamenti(null); return; }
@@ -251,29 +274,45 @@ export default function StarsCoin() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {!centroShop && (
           <>
-            <Text style={s.sectionTitle}>Il tuo saldo</Text>
-            {/* 2 box (fix utente esplicito): saldo totale + quanto hai
-                risparmiato pagando in Star Coin invece che in contanti —
-                stesso tasso fisso di conversione di stars-system (1 SC =
-                €0,01, vedi lib/stars.ts coinInEuro). */}
+            <Text style={s.sectionTitle}>Stars Coin</Text>
+            {/* 2 box (fix utente esplicito): "Il tuo saldo" a sx (tap =
+                transazioni in entrata, cioè guadagnate) e "Utilizzati" a dx
+                (tap = transazioni in uscita, cioè spese) — prima erano solo
+                due numeri non cliccabili. */}
             <View style={s.saldiRow}>
-              <Card style={s.saldoBox}>
-                <View style={s.saldoBoxInner}>
-                  <Ionicons name="star" size={22} color={colors.gold} />
-                  <Text style={s.saldoBoxValore}>{totale} SC</Text>
-                  <Muted style={s.saldoBoxLabel}>Saldo totale</Muted>
-                </View>
-              </Card>
-              <Card style={s.saldoBox}>
-                <View style={s.saldoBoxInner}>
-                  <Ionicons name="wallet-outline" size={22} color={colors.green} />
-                  <Text style={s.saldoBoxValore}>{Math.round(totaleSpeso)} SC</Text>
-                  <Muted style={s.saldoBoxLabel}>Hai risparmiato {formattaEuro(coinInEuro(totaleSpeso))}</Muted>
-                </View>
-              </Card>
+              <Pressable style={{ flex: 1 }} onPress={() => apriTransazioni('entrata')}>
+                <Card style={s.saldoBox}>
+                  <View style={s.saldoBoxInner}>
+                    <Ionicons name="star" size={22} color={colors.gold} />
+                    <Text style={s.saldoBoxValore}>{totale} SC</Text>
+                    <Muted style={s.saldoBoxLabel}>Il tuo saldo</Muted>
+                  </View>
+                </Card>
+              </Pressable>
+              <Pressable style={{ flex: 1 }} onPress={() => apriTransazioni('uscita')}>
+                <Card style={s.saldoBox}>
+                  <View style={s.saldoBoxInner}>
+                    <Ionicons name="wallet-outline" size={22} color={colors.green} />
+                    <Text style={s.saldoBoxValore}>{Math.round(totaleSpeso)} SC</Text>
+                    <Muted style={s.saldoBoxLabel}>Utilizzati</Muted>
+                  </View>
+                </Card>
+              </Pressable>
             </View>
 
-            <Text style={[s.sectionTitle, { marginTop: Spacing.xl }]}>Shop</Text>
+            {/* Club (prodotti/abbonamenti del centro, invariato) vs Privé
+                (annunci tra giocatori, nuovo — fix utente esplicito: "Shop
+                deve dividersi in 'Shop Club' e 'Shop privè'"). */}
+            <Segmented
+              value={sezioneShop} onChange={(v) => setSezioneShop(v as SezioneShop)}
+              options={[{ value: 'club', label: 'Shop Club' }, { value: 'prive', label: 'Shop Privé' }]}
+              style={{ marginTop: Spacing.xl, marginBottom: Spacing.md }}
+            />
+
+            {sezioneShop === 'prive' && <SezioneShopPrive />}
+
+            {sezioneShop === 'club' && (
+              <>
             <Muted style={{ marginBottom: Spacing.md }}>Scegli il centro per vedere i suoi prodotti.</Muted>
 
             <View style={s.filtriRow}>
@@ -320,6 +359,8 @@ export default function StarsCoin() {
                 </Card>
               </Pressable>
             ))}
+              </>
+            )}
           </>
         )}
 
@@ -629,6 +670,37 @@ export default function StarsCoin() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Transazioni in entrata/uscita (fix utente esplicito: tap sulle box
+          saldo/utilizzati) — stesso linguaggio "vetro" degli altri modali
+          di questa schermata. */}
+      <Modal visible={!!transazioniAperte} transparent animationType="fade" onRequestClose={() => setTransazioniAperte(null)}>
+        <Pressable style={s.modaleSfondo} onPress={() => setTransazioniAperte(null)}>
+          <Pressable style={s.transazioniBox} onPress={(e) => e.stopPropagation()}>
+            <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
+            <Text style={[s.dettaglioTitolo, { marginBottom: Spacing.md }]}>{transazioniAperte === 'entrata' ? 'Stars Coin guadagnati' : 'Stars Coin utilizzati'}</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+              {transazioni === null ? (
+                <ActivityIndicator color={colors.gold} style={{ marginTop: Spacing.lg }} />
+              ) : transazioni.length === 0 ? (
+                <Muted style={{ textAlign: 'center', marginTop: Spacing.lg }}>Nessuna transazione ancora.</Muted>
+              ) : transazioni.map((t) => (
+                <View key={t.id} style={s.transRiga}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.transMotivo} numberOfLines={1}>{motivoTransazione(t)}</Text>
+                    <Muted style={{ fontSize: Font.tiny }}>{new Date(t.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}</Muted>
+                  </View>
+                  <Text style={[s.transImporto, { color: t.importo > 0 ? colors.green : colors.red }]}>
+                    {t.importo > 0 ? '+' : ''}{Math.round(t.importo)} SC
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+            <Button title="Chiudi" variant="ghost" onPress={() => setTransazioniAperte(null)} style={{ marginTop: Spacing.md }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -719,6 +791,13 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     // Dettaglio prodotto/abbonamento — vetro forte, stesso linguaggio dei
     // modali già in uso nell'app (AppHeader, impegni.tsx).
     modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.45)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
+    transazioniBox: {
+      width: '100%', maxWidth: 400, maxHeight: '82%', borderRadius: Radius.modal, overflow: 'hidden',
+      borderWidth: 1, borderColor: glass.strongBorder, padding: Spacing.lg,
+    } as any,
+    transRiga: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.navyLine + '18' },
+    transMotivo: { color: colors.navyDeep, fontWeight: '700', fontSize: Font.small },
+    transImporto: { fontWeight: '900', fontSize: Font.body },
     dettaglioBox: { width: '100%', maxWidth: 400, maxHeight: '82%', borderRadius: Radius.modal, overflow: 'hidden', borderWidth: 1, borderColor: glass.strongBorder },
     dettaglioFooter: { padding: Spacing.lg, borderTopWidth: 1, borderTopColor: glass.strongBorder },
     dettaglioAbbBox: { width: '100%', maxWidth: 400, maxHeight: '82%', borderRadius: Radius.modal, overflow: 'hidden', borderWidth: 1, borderColor: glass.strongBorder },

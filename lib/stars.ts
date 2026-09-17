@@ -128,6 +128,16 @@ export const ETICHETTA_STATO_ISCRIZIONI: Record<StatoIscrizioni, string> = {
   in_arrivo: 'In arrivo', aperte: 'Aperte', sold_out: 'Sold out', chiuso: 'Chiuso',
 };
 
+// Categorie annuncio Shop Privé (fix utente esplicito: "filtrabili per
+// tipologia") — enum solo lato app, ShopProdotto (centro) non ne ha mai
+// avuto bisogno, nessun precedente da riusare (vedi backend/app/models/
+// prodotto_privato.py).
+export const CATEGORIE_PRODOTTO_PRIVATO = ['racchette', 'scarpe', 'abbigliamento', 'palline', 'borse', 'altro'] as const;
+export type CategoriaProdottoPrivato = typeof CATEGORIE_PRODOTTO_PRIVATO[number];
+export const ETICHETTA_CATEGORIA_PRIVATO: Record<CategoriaProdottoPrivato, string> = {
+  racchette: 'Racchette', scarpe: 'Scarpe', abbigliamento: 'Abbigliamento', palline: 'Palline', borse: 'Borse', altro: 'Altro',
+};
+
 export const BADGE_CATALOGO = [
   { id: 'b1', nome: 'Prima partita', descrizione: 'Ha giocato la sua prima partita PSL', icona: '🎾' },
   { id: 'b2', nome: 'Prima vittoria', descrizione: 'Ha vinto la sua prima partita', icona: '🏆' },

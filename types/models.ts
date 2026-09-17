@@ -664,13 +664,39 @@ export interface CoinSaldo {
 }
 
 /** Riga di log di un movimento coin (backend/app/models/coin.py) — positivo
- *  = accredito, negativo = addebito. Usata solo per sommare quanto un
- *  giocatore ha speso in totale (vedi getTotaleCoinSpeso in lib/api.ts). */
+ *  = accredito (entrata), negativo = addebito (uscita). `created_at`/`tipo`/
+ *  `riferimento` aggiunti (fix utente esplicito, Shop: elenco transazioni
+ *  entrata/uscita, prima si leggeva solo il totale aggregato). */
 export interface CoinTransazione {
   id: string;
   giocatore_id: string;
   centro_id: string;
   importo: number;
+  created_at: string;
+  tipo?: 'rettifica_piu' | 'rettifica_meno' | null;
+  riferimento?: { motivo?: string; [key: string]: unknown } | null;
+}
+
+/** Annuncio di vendita tra giocatori (fix utente esplicito, "Shop Privé") —
+ *  a differenza di ShopProdotto il venditore è un giocatore, non un
+ *  centro; prezzo sempre in €, nessun flusso di pagamento in-app (vedi
+ *  backend/app/models/prodotto_privato.py). */
+export interface ProdottoPrivato {
+  id: string;
+  giocatore_id: string;
+  centro_id: string | null;
+  nome: string;
+  descrizione: string | null;
+  categoria: string;
+  condizione: 'nuovo' | 'usato';
+  prezzo_euro: number;
+  immagine_url: string | null;
+  sport: string | null;
+  stato: 'attivo' | 'venduto' | 'rimosso';
+  created_at: string;
+  // join lato client
+  venditore?: Giocatore;
+  centro?: Centro;
 }
 
 // ---- Concetti Stars League (allineati alla demo) ----
