@@ -524,7 +524,7 @@ export interface Campionato {
 // Quota di iscrizione per giocatore (fix utente esplicito, "il buco dei
 // pagamenti"): { giocatore_id: {importo, pagato} }, stessa forma di
 // PagamentoGiocatore usato per le prenotazioni.
-export type PagamentiIscrizione = Record<string, { importo: number; pagato: boolean }>;
+export type PagamentiIscrizione = Record<string, { importo: number; pagato: boolean; metodo?: string }>;
 
 export interface CampionatoPartecipante {
   id: string;
