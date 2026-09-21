@@ -542,7 +542,7 @@ export interface Torneo {
   centro_id: string;
   nome: string;
   sport: string;
-  format_type: 'round_robin' | 'single_elimination' | 'americano' | 'swiss';
+  format_type: 'round_robin' | 'single_elimination' | 'americano' | 'swiss' | 'stars_of_the_court';
   tipo_iscrizione: 'singolo' | 'coppia';
   divisione: 'maschile' | 'femminile' | 'misto';
   stato: StatoCampionatoTorneo;

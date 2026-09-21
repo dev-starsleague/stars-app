@@ -8,10 +8,11 @@ import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { getStars, getPartiteGiocatore, getEventiIscritti, getCentri } from '../../lib/api';
 import { servePagamento } from '../../lib/impegni';
-import { formattaEuro } from '../../lib/stars';
 import { AppHeader } from '../../components/AppHeader';
 import { HomeCarousel } from '../../components/HomeCarousel';
 import { Card, Muted, Button } from '../../components/ui';
+import { RiepilogoPrenotazioneModal } from '../../components/RiepilogoPrenotazioneModal';
+import { avvisa } from '../../lib/avviso';
 import { getGreeting, oggiISO } from '../../lib/saluto';
 import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { StarsProfilo, Prenotazione, EventoCustom, Centro } from '../../types/models';
@@ -57,16 +58,6 @@ interface RigaImpegno {
   prenotazione?: Prenotazione;
 }
 
-function nomeGiocatoreRiga(id: string, p: Prenotazione): string {
-  const g = p.giocatori?.find((x) => x.id === id);
-  return g ? `${g.nome} ${g.cognome}`.trim() : 'Giocatore';
-}
-function squadreRiepilogoRiga(p: Prenotazione): { a: string[]; b: string[] } {
-  if (p.squadre) return p.squadre;
-  const meta = Math.ceil(p.giocatori_extra.length / 2);
-  return { a: p.giocatori_extra.slice(0, meta), b: p.giocatori_extra.slice(meta) };
-}
-function oggiISOLocale() { return new Date().toISOString().slice(0, 10); }
 
 export default function Home() {
   const { me } = useAuth();
@@ -183,89 +174,16 @@ export default function Home() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* Riepilogo prenotazione: stesso contenuto/stile di giorno/[data].tsx */}
-      <Modal visible={!!riepilogoAperto} transparent animationType="fade" onRequestClose={() => setRiepilogoAperto(null)}>
-        <Pressable style={s.modaleSfondo} onPress={() => setRiepilogoAperto(null)}>
-          <Pressable style={s.modaleBox} onPress={(e) => e.stopPropagation()}>
-            {riepilogoAperto && (
-              <RiepilogoPrenotazione
-                p={riepilogoAperto} colors={colors} s={s}
-                centroNome={riepilogoAperto.campo ? centroById.get(riepilogoAperto.campo.centro_id)?.nome ?? null : null}
-                centroIndirizzo={riepilogoAperto.campo ? centroById.get(riepilogoAperto.campo.centro_id)?.indirizzo ?? null : null}
-              />
-            )}
-            <Button title="Chiudi" variant="ghost" onPress={() => setRiepilogoAperto(null)} style={{ marginTop: Spacing.md }} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* Riepilogo prenotazione: componente condiviso con giorno/[data].tsx
+          (fix utente esplicito, "sistema TUTTO" — un audit del codice ha
+          trovato che le due copie separate erano già divergenti: questa
+          aveva centro/indirizzo/Maps, l'altra no). */}
+      <RiepilogoPrenotazioneModal
+        prenotazione={riepilogoAperto}
+        centro={riepilogoAperto?.campo ? centroById.get(riepilogoAperto.campo.centro_id) : null}
+        onChiudi={() => setRiepilogoAperto(null)}
+      />
     </SafeAreaView>
-  );
-}
-
-// Dettaglio completo di UNA prenotazione — stessa funzione di
-// giorno/[data].tsx (duplicata qui invece di condivisa: le due schermate
-// hanno scopi diversi — questa è l'espansione inline in Home, l'altra
-// resta il target di deep-link esterni — e restano volutamente
-// indipendenti per non introdurre un accoppiamento tra le due).
-function RiepilogoPrenotazione({ p, colors, s, centroNome, centroIndirizzo }: {
-  p: Prenotazione; colors: AppColors; s: ReturnType<typeof makeStyles>; centroNome: string | null; centroIndirizzo: string | null;
-}) {
-  const squadre = squadreRiepilogoRiga(p);
-  const haSquadre = p.tipo !== 'lezione' && (squadre.a.length > 0 || squadre.b.length > 0);
-  return (
-    <View>
-      <Text style={s.modaleTitolo}>{p.campo?.nome ?? (p.tipo === 'lezione' ? 'Lezione' : 'Partita')}</Text>
-      <View style={s.riepilogoRiga}>
-        <Ionicons name="calendar-outline" size={16} color={colors.slate} />
-        <Text style={s.riepilogoTesto}>{p.data} · {p.inizio?.slice(0, 5) ?? '—'}{p.fine ? `-${p.fine.slice(0, 5)}` : ''}</Text>
-      </View>
-      {p.campo?.sport && (
-        <View style={s.riepilogoRiga}>
-          <Ionicons name="pricetag-outline" size={16} color={colors.slate} />
-          <Text style={s.riepilogoTesto}>{p.campo.sport}</Text>
-        </View>
-      )}
-      {centroNome && (
-        <View style={s.riepilogoRiga}>
-          <Ionicons name="location-outline" size={16} color={colors.slate} />
-          <Text style={s.riepilogoTesto}>{centroNome}{p.campo?.nome ? ` · ${p.campo.nome}` : ''}</Text>
-        </View>
-      )}
-      {centroIndirizzo && (
-        <View style={{ marginTop: Spacing.sm }}>
-          <Text style={s.mapsIndirizzo}>{centroIndirizzo}</Text>
-          <Pressable onPress={() => Linking.openURL(linkGoogleMaps(centroIndirizzo))} style={[s.mapsPortamiQui, { marginTop: 6 }]}>
-            <Ionicons name="navigate" size={13} color={colors.navyDeep} />
-            <Text style={s.mapsPortamiQuiText}>Portami qui</Text>
-          </Pressable>
-        </View>
-      )}
-      <View style={s.riepilogoRiga}>
-        <Ionicons name="wallet-outline" size={16} color={colors.slate} />
-        <Text style={s.riepilogoTesto}>{formattaEuro(p.prezzo)} · {servePagamento(p) ? 'Da pagare' : 'Pagato'}</Text>
-      </View>
-
-      {haSquadre && (
-        <View style={{ marginTop: Spacing.md }}>
-          <Muted style={{ marginBottom: 4 }}>Squadra A</Muted>
-          <Text style={s.riepilogoTesto}>{squadre.a.map((id) => nomeGiocatoreRiga(id, p)).join(', ') || '—'}</Text>
-          <Muted style={{ marginTop: Spacing.sm, marginBottom: 4 }}>Squadra B</Muted>
-          <Text style={s.riepilogoTesto}>{squadre.b.map((id) => nomeGiocatoreRiga(id, p)).join(', ') || '—'}</Text>
-        </View>
-      )}
-
-      {p.risultato?.sets?.length ? (
-        <View style={{ marginTop: Spacing.md }}>
-          <Muted style={{ marginBottom: 4 }}>Risultato</Muted>
-          <Text style={s.riepilogoTesto}>
-            {p.risultato.sets.map((set) => `${set.a}-${set.b}${set.tb ? ' TB' : ''}`).join('  ')}
-            {p.risultato.vincitore ? ` · Vince squadra ${p.risultato.vincitore}` : ' · Pareggio'}
-          </Text>
-        </View>
-      ) : p.tipo !== 'lezione' && p.data && p.data < oggiISOLocale() ? (
-        <Muted style={{ marginTop: Spacing.md }}>Risultato non ancora inserito.</Muted>
-      ) : null}
-    </View>
   );
 }
 
@@ -288,6 +206,16 @@ function CalendarWidget({ partite, eventi, onPick, giornoSelezionato, impegniGio
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  // Linking.openURL può rifiutare (nessuna app Maps/browser raggiungibile
+  // sul dispositivo) — senza .catch il tasto non faceva nulla in silenzio
+  // (fix da un audit del codice, "sistema TUTTO").
+  const apriMaps = async (indirizzo: string) => {
+    try {
+      await Linking.openURL(linkGoogleMaps(indirizzo));
+    } catch {
+      avvisa('Errore', 'Non riesco ad aprire Google Maps su questo dispositivo.');
+    }
+  };
   const oggiReale = new Date();
   const [meseAttivo, setMeseAttivo] = useState(() => new Date(oggiReale.getFullYear(), oggiReale.getMonth(), 1));
 
@@ -434,7 +362,7 @@ function CalendarWidget({ partite, eventi, onPick, giornoSelezionato, impegniGio
                       {mapsAperto && (
                         <View style={s.mapsEspanso}>
                           <Text style={s.mapsIndirizzo}>{r.indirizzo}</Text>
-                          <Pressable onPress={() => Linking.openURL(linkGoogleMaps(r.indirizzo!))} style={s.mapsPortamiQui}>
+                          <Pressable onPress={() => apriMaps(r.indirizzo!)} style={s.mapsPortamiQui}>
                             <Ionicons name="navigate" size={13} color={colors.navyDeep} />
                             <Text style={s.mapsPortamiQuiText}>Portami qui</Text>
                           </Pressable>
@@ -513,13 +441,5 @@ function makeStyles(colors: AppColors) {
       backgroundColor: colors.gold, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
     },
     mapsPortamiQuiText: { color: colors.navyDeep, fontSize: Font.small, fontWeight: '800' },
-    modaleSfondo: { flex: 1, backgroundColor: 'rgba(15,23,38,0.4)', alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
-    modaleBox: {
-      width: '100%', maxWidth: 360, borderRadius: Radius.card, padding: Spacing.lg,
-      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.navyLine + '33',
-    },
-    modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
-    riepilogoRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-    riepilogoTesto: { color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
   });
 }

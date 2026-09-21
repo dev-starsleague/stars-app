@@ -384,17 +384,24 @@ export async function assegnaNoleggio(input: {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
-// ---------- Pagamento prenotazione ----------
+// ---------- Pagamento prenotazione/iscrizione ----------
 
-/** Accredita/addebita Star Coin — stesso endpoint atomico del gestionale
- *  (POST /coin-transazioni/movimento: aggiorna saldo e registra la
- *  transazione in un solo commit server-side). importo negativo = addebito;
- *  il backend rifiuta da sé se il saldo non basta. */
-async function movimentoCoin(input: { centroId: string; giocatoreId: string; importo: number; motivo: string }): Promise<{ ok: boolean; error?: string }> {
+/** Un solo endpoint atomico per ogni pagamento di quota (prenotazione,
+ *  iscrizione a torneo/campionato) — POST /pagamenti/quota: nella STESSA
+ *  transazione backend scala il saldo Stars Coin (se metodo="coin") E
+ *  segna la/le quote pagate, un solo commit. Sostituisce il vecchio
+ *  schema a due chiamate separate (prima il movimento coin, poi un PATCH
+ *  a parte) — un fallimento nel mezzo poteva scalare il saldo senza
+ *  segnare la quota pagata (fix da un audit del codice, "sistema TUTTO"). */
+async function pagaQuota(input: {
+  tipo: 'prenotazione' | 'torneo' | 'campionato'; entitaId: string; centroId: string; pagatoDa: string;
+  quote: { giocatoreId: string; importo: number }[]; metodo: 'coin' | 'euro';
+}): Promise<{ ok: boolean; error?: string }> {
   if (isMock()) return { ok: true };
-  const { error } = await apiPost('/coin-transazioni/movimento', {
-    centro_id: input.centroId, giocatore_id: input.giocatoreId, importo: input.importo,
-    riferimento: { motivo: input.motivo },
+  const { error } = await apiPost('/pagamenti/quota', {
+    tipo: input.tipo, entita_id: input.entitaId, centro_id: input.centroId, pagato_da: input.pagatoDa,
+    quote: input.quote.map((q) => ({ giocatore_id: q.giocatoreId, importo: q.importo })),
+    metodo: input.metodo,
   });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
@@ -412,32 +419,19 @@ export function quotaGiocatore(p: Prenotazione, giocatoreId: string, prestiti: N
   return Math.round((base + noleggio) * 100) / 100;
 }
 
-/** Il giocatore paga la propria quota — stesso schema NON atomico del
- *  gestionale (prima il movimento Star Coin, solo se va a buon fine si
- *  segna pagato: mai al contrario, altrimenti risulterebbe pagato senza
- *  che il saldo si sia mosso). In 'euro' non c'è una passerella di
+/** Il giocatore paga la propria quota. In 'euro' non c'è una passerella di
  *  pagamento reale in questo progetto: resta da saldare fisicamente al
  *  centro, si segna solo come tracciato — stesso principio già in uso per
- *  acquistaProdotto/acquistaAbbonamento. */
+ *  acquistaProdotto/acquistaAbbonamento (il backend scrive comunque
+ *  "non_categorizzato" come metodo, mai un vero addebito). */
 export async function pagaQuotaPrenotazione(input: {
   prenotazione: Prenotazione; giocatoreId: string; importo: number; metodo: 'coin' | 'euro';
 }): Promise<{ ok: boolean; error?: string }> {
   const { prenotazione: p, giocatoreId, importo, metodo } = input;
-  if (isMock()) return { ok: true };
-  if (metodo === 'coin') {
-    const esito = await movimentoCoin({ centroId: p.centro_id, giocatoreId, importo: -importo, motivo: 'pagamento_prenotazione' });
-    if (!esito.ok) return esito;
-  }
-  // "euro" non ha un metodo di cassa reale nel gestionale (contanti/
-  // elettronico/bonifico presuppongono tutti che lo staff abbia
-  // fisicamente incassato) — si scrive "non_categorizzato", stessa
-  // etichetta già usata da acquistaProdotto/acquistaAbbonamento per un
-  // pagamento self-service senza passerella, riconoscibile allo stesso
-  // modo lato gestionale.
-  const metodoScritto: 'coin' | 'non_categorizzato' = metodo === 'coin' ? 'coin' : 'non_categorizzato';
-  const pagamenti = { ...(p.pagamenti ?? {}), [giocatoreId]: { importo, pagato: true, metodo: metodoScritto } };
-  const tuttiPagati = p.giocatori_extra.every((id) => pagamenti[id]?.pagato);
-  return updatePrenotazione(p.id, { pagamenti, stato_pagamento: tuttiPagati ? 'saldato' : 'da_pagare' });
+  return pagaQuota({
+    tipo: 'prenotazione', entitaId: p.id, centroId: p.centro_id, pagatoDa: giocatoreId,
+    quote: [{ giocatoreId, importo }], metodo,
+  });
 }
 
 /** Un giocatore paga TUTTE le quote non ancora saldate (comprese quelle
@@ -447,38 +441,24 @@ export async function pagaInteroCampo(input: {
   prenotazione: Prenotazione; pagatoDa: string; metodo: 'coin' | 'euro'; prestiti: NoleggioPrestito[];
 }): Promise<{ ok: boolean; error?: string }> {
   const { prenotazione: p, pagatoDa, metodo, prestiti } = input;
-  if (isMock()) return { ok: true };
   const nonPagati = p.giocatori_extra.filter((id) => !p.pagamenti?.[id]?.pagato);
   if (nonPagati.length === 0) return { ok: true };
-  const quote = new Map(nonPagati.map((id) => [id, quotaGiocatore(p, id, prestiti)]));
-  const totale = Math.round([...quote.values()].reduce((s, v) => s + v, 0) * 100) / 100;
-  if (metodo === 'coin') {
-    const esito = await movimentoCoin({ centroId: p.centro_id, giocatoreId: pagatoDa, importo: -totale, motivo: 'pagamento_prenotazione_completo' });
-    if (!esito.ok) return esito;
-  }
-  const metodoScritto: 'coin' | 'non_categorizzato' = metodo === 'coin' ? 'coin' : 'non_categorizzato';
-  const pagamenti = { ...(p.pagamenti ?? {}) };
-  for (const id of nonPagati) pagamenti[id] = { importo: quote.get(id)!, pagato: true, metodo: metodoScritto };
-  return updatePrenotazione(p.id, { pagamenti, stato_pagamento: 'saldato' });
+  const quote = nonPagati.map((id) => ({ giocatoreId: id, importo: quotaGiocatore(p, id, prestiti) }));
+  return pagaQuota({ tipo: 'prenotazione', entitaId: p.id, centroId: p.centro_id, pagatoDa, quote, metodo });
 }
 
 /** Paga la propria quota di iscrizione a un torneo/campionato con Stars
  *  Coin (fix utente esplicito, "il buco dei pagamenti": prima la quota
- *  era solo un numero mostrato, senza alcun modo di saldarla) — stesso
- *  principio di pagaQuotaPrenotazione sopra. Il PATCH sostituisce l'intero
- *  dict `pagamenti`, quindi parte sempre da quello attuale. */
+ *  era solo un numero mostrato, senza alcun modo di saldarla). */
 export async function pagaQuotaIscrizione(input: {
   tipo: 'torneo' | 'campionato'; partecipante: TorneoPartecipante | CampionatoPartecipante;
   centroId: string; giocatoreId: string; importo: number;
 }): Promise<{ ok: boolean; error?: string }> {
   const { tipo, partecipante, centroId, giocatoreId, importo } = input;
-  if (isMock()) return { ok: true };
-  const esito = await movimentoCoin({ centroId, giocatoreId, importo: -importo, motivo: 'pagamento_iscrizione_evento' });
-  if (!esito.ok) return esito;
-  const pagamenti = { ...(partecipante.pagamenti ?? {}), [giocatoreId]: { importo, pagato: true } };
-  const path = tipo === 'torneo' ? `/tornei-partecipanti/${partecipante.id}` : `/campionati-partecipanti/${partecipante.id}`;
-  const { error } = await apiPatch(path, { pagamenti });
-  return error ? { ok: false, error: error.message } : { ok: true };
+  return pagaQuota({
+    tipo, entitaId: partecipante.id, centroId, pagatoDa: giocatoreId,
+    quote: [{ giocatoreId, importo }], metodo: 'coin',
+  });
 }
 
 /** Registra il risultato di una partita già giocata — stesso endpoint del
