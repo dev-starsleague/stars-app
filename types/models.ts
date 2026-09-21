@@ -766,6 +766,29 @@ export interface Badge {
   ottenuto: boolean;
 }
 
+// Centro notifiche (Fase 1 del ticket "Sistema notifiche app"): righe
+// generate dal backend (app/services/notifiche.py), mai create dal client
+// — l'app le legge e può solo marcare `letta`. "azione" = 🔴 richiede un
+// intervento, "promemoria" = 🟠, "informazione" = 🔵, "positivo" = 🟢.
+export type PrioritaNotifica = 'azione' | 'promemoria' | 'informazione' | 'positivo';
+
+export interface Notifica {
+  id: string;
+  giocatore_id: string;
+  centro_id: string | null;
+  tipo: string;
+  priorita: PrioritaNotifica;
+  titolo: string;
+  corpo: string | null;
+  cta_testo: string | null;
+  cta_rotta: string | null;
+  riferimento: Record<string, any> | null;
+  chiave_dedup: string;
+  letta: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type StatoAmicizia = 'in_attesa' | 'accettata';
 
 export interface Amicizia {

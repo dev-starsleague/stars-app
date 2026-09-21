@@ -1,20 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { SquircleView } from 'react-native-figma-squircle';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 import { useSport } from '../lib/sport';
-import { getPartiteGiocatore } from '../lib/api';
-import { serveRisultato, servePagamento } from '../lib/impegni';
+import { getNotifiche, segnaNotificaLetta } from '../lib/api';
 import { iconaSport } from '../lib/stars';
 import { Avatar } from './ui';
 import { Radius, Spacing, Font, AppColors, AppGlass, CORNER_SMOOTHING } from '../constants/theme';
-import type { Prenotazione } from '../types/models';
+import type { Notifica, PrioritaNotifica } from '../types/models';
 
 // Header ridisegnato (fix utente esplicito): niente più logo/nome — a
 // sinistra il toggle tema (sole/luna) e il selettore sport (apre una
@@ -22,26 +20,35 @@ import type { Prenotazione } from '../types/models';
 // stato tolto (fix utente esplicito: "rimuovi STAR dalla NAVBAR e spostaci
 // SHOP") — Shop si raggiunge ora dalla navbar in basso (vedi
 // app/(tabs)/_layout.tsx), niente più doppia via per la stessa schermata.
-// La campanella ora apre davvero una lista di notifiche interattive,
-// derivate dagli stessi impegni di app/impegni.tsx (pagamenti da saldare,
-// risultati mancanti, promemoria prossimi) — non esiste un'entità
-// "notifiche" nel backend condiviso, quindi sono calcolate da dati reali
-// già disponibili, non finte.
-type TipoNotifica = 'pagamento' | 'risultato' | 'promemoria';
-interface Notifica { id: string; tipo: TipoNotifica; testo: string }
-
-function oggiISO() { return new Date().toISOString().slice(0, 10); }
-function domaniISO() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); }
-
-// Notifiche "lette" persistite per id (fix utente esplicito: "quando leggo
-// una notifica deve scomparire") — non esiste un flag "letta" sul backend
-// (le notifiche sono derivate, non un'entità reale, vedi sopra), quindi lo
-// stato di lettura vive solo qui, sullo stesso AsyncStorage di tema/sport.
-// Un id resta "letto" per sempre: è per (prenotazione+motivo), quindi se la
-// stessa prenotazione genera più avanti un motivo diverso (es. "oggi" che
-// ieri era "domani") ha un id nuovo e ricompare da sola, comportamento
-// corretto — non è la prenotazione a sparire, è QUELLA specifica notifica.
-const CHIAVE_LETTE = 'stars-notifiche-lette';
+//
+// Centro notifiche (Fase 1 del ticket "Sistema notifiche app", fix utente
+// esplicito): la campanella ora legge un'entità reale generata dal backend
+// (app/services/notifiche.py, vedi getNotifiche in lib/api.ts) invece di
+// derivare una lista al volo dalle prenotazioni — stato letto/non letto
+// persistito lato server (PATCH /notifiche/{id}), non più solo locale.
+function emojiPriorita(p: PrioritaNotifica) {
+  return p === 'azione' ? '🔴' : p === 'promemoria' ? '🟠' : p === 'positivo' ? '🟢' : '⚪';
+}
+function iconaTipo(tipo: string): React.ComponentProps<typeof Ionicons>['name'] {
+  if (tipo === 'pagamento_da_completare') return 'card-outline';
+  if (tipo === 'risultato_da_inserire') return 'trophy-outline';
+  if (tipo === 'promemoria_oggi' || tipo === 'promemoria_domani') return 'time-outline';
+  if (tipo === 'partita_programmata') return 'calendar-outline';
+  if (tipo === 'risultato_confermato') return 'checkmark-circle-outline';
+  if (tipo === 'certificato_scadenza') return 'medkit-outline';
+  if (tipo === 'tessera_scadenza') return 'id-card-outline';
+  if (tipo === 'coin_saldo_basso') return 'wallet-outline';
+  if (tipo === 'ranking_migliorato') return 'trending-up-outline';
+  if (tipo.startsWith('torneo_') || tipo.startsWith('campionato_')) {
+    if (tipo.endsWith('_concluso')) return 'flag-outline';
+    if (tipo.endsWith('_suggerito')) return 'flame-outline';
+    if (tipo.endsWith('_iscrizioni_in_chiusura')) return 'alarm-outline';
+    return 'trophy-outline';
+  }
+  if (tipo === 'avanzamento_evento') return 'ribbon-outline';
+  if (tipo === 'sfida_ricevuta') return 'flash-outline';
+  return 'notifications-outline';
+}
 
 export function AppHeader() {
   const router = useRouter();
@@ -53,49 +60,30 @@ export function AppHeader() {
   const [sportModaleAperto, setSportModaleAperto] = useState(false);
   const [notificheAperte, setNotificheAperte] = useState(false);
   const [notifiche, setNotifiche] = useState<Notifica[]>([]);
-  const [lette, setLette] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    AsyncStorage.getItem(CHIAVE_LETTE).then((raw) => {
-      if (raw) setLette(new Set(JSON.parse(raw)));
-    });
-  }, []);
 
   useFocusEffect(useCallback(() => {
     if (!me) return;
-    getPartiteGiocatore(me.id).then((partite: Prenotazione[]) => {
-      const oggi = oggiISO(); const domani = domaniISO();
-      const righe: Notifica[] = [];
-      for (const p of partite) {
-        const nomeCampo = p.campo?.nome ?? 'campo';
-        if (p.data && p.data < oggi) {
-          if (servePagamento(p)) righe.push({ id: `pag-${p.id}`, tipo: 'pagamento', testo: `Da pagare: ${nomeCampo} · €${p.prezzo}` });
-          if (serveRisultato(p)) righe.push({ id: `ris-${p.id}`, tipo: 'risultato', testo: `Inserisci il risultato: ${nomeCampo}` });
-        } else if (p.data === oggi) {
-          righe.push({ id: `oggi-${p.id}`, tipo: 'promemoria', testo: `Oggi alle ${p.inizio?.slice(0, 5) ?? ''}: ${nomeCampo}` });
-        } else if (p.data === domani) {
-          righe.push({ id: `dom-${p.id}`, tipo: 'promemoria', testo: `Domani alle ${p.inizio?.slice(0, 5) ?? ''}: ${nomeCampo}` });
-        }
-      }
-      setNotifiche(righe.slice(0, 12));
-    });
+    getNotifiche(me.id).then(setNotifiche);
   }, [me]));
 
-  // Solo le non lette contano/si vedono (fix utente esplicito: "quando
-  // leggo una notifica deve scomparire") — il badge sul campanello riflette
-  // sempre e solo questo elenco filtrato, mai il totale calcolato.
-  const notificheNonLette = useMemo(() => notifiche.filter((n) => !lette.has(n.id)), [notifiche, lette]);
+  // Il badge sul campanello conta solo le non lette; la lista sotto invece
+  // le mostra tutte (già ordinate dalle più recenti da getNotifiche) così
+  // lo stato letto/non letto resta visibile e consultabile, non sparisce
+  // dalla lista appena aperta (fix rispetto alla versione precedente, che
+  // filtrava via le lette: qui "letta" è un fatto persistito, non un modo
+  // per far sparire la riga).
+  const nonLette = useMemo(() => notifiche.filter((n) => !n.letta).length, [notifiche]);
 
-  const coloreNotifica = (t: TipoNotifica) => t === 'pagamento' ? colors.red : t === 'risultato' ? colors.gold : colors.green;
-  const leggiNotifica = (n: Notifica) => {
-    setLette((cur) => {
-      const next = new Set(cur);
-      next.add(n.id);
-      AsyncStorage.setItem(CHIAVE_LETTE, JSON.stringify([...next])).catch(() => {});
-      return next;
-    });
+  const coloreNotifica = (p: PrioritaNotifica) =>
+    p === 'azione' ? colors.red : p === 'promemoria' ? colors.gold : p === 'positivo' ? colors.green : colors.slate;
+
+  const apriNotifica = (n: Notifica) => {
+    if (!n.letta) {
+      setNotifiche((cur) => cur.map((x) => (x.id === n.id ? { ...x, letta: true } : x)));
+      segnaNotificaLetta(n.id).catch(() => {});
+    }
     setNotificheAperte(false);
-    router.push('/impegni');
+    router.push((n.cta_rotta ?? '/impegni') as any);
   };
 
   return (
@@ -116,7 +104,7 @@ export function AppHeader() {
         <Pressable style={s.bell} onPress={() => setNotificheAperte(true)}>
           <SquircleView style={StyleSheet.absoluteFillObject} squircleParams={{ cornerRadius: Radius.control, cornerSmoothing: CORNER_SMOOTHING, fillColor: glass.regularBg, strokeColor: glass.regularBorder, strokeWidth: 1 }} />
           <Ionicons name="notifications-outline" size={20} color={colors.slateLight} />
-          {notificheNonLette.length > 0 && <View style={[s.badge, { backgroundColor: colors.gold }]}><Text style={[s.badgeText, { color: colors.navyDeep }]}>{notificheNonLette.length}</Text></View>}
+          {nonLette > 0 && <View style={[s.badge, { backgroundColor: colors.gold }]}><Text style={[s.badgeText, { color: colors.navyDeep }]}>{nonLette > 9 ? '9+' : nonLette}</Text></View>}
         </Pressable>
         <Pressable onPress={() => router.push('/(tabs)/profilo')}>
           <Avatar name={me?.nome ?? 'Player'} uri={me?.avatar_url} genere={me?.genere} size={40} squircle gold />
@@ -141,23 +129,37 @@ export function AppHeader() {
         </Pressable>
       </Modal>
 
-      {/* Lista notifiche interattive: derivate da pagamenti/risultati/promemoria reali */}
+      {/* Centro notifiche: popup compatto (non una schermata intera), mini-
+          anteprima per riga con priorità/tipo, stato letto/non letto e CTA
+          diretta — vedi sezioni 1 e 8 del ticket "Sistema notifiche app". */}
       <Modal visible={notificheAperte} transparent animationType="fade" onRequestClose={() => setNotificheAperte(false)}>
         <Pressable style={s.modaleSfondo} onPress={() => setNotificheAperte(false)}>
           <View style={s.notificheBox}>
             <BlurView intensity={glass.blurStrong} tint={scheme} style={StyleSheet.absoluteFillObject} />
             <View style={[StyleSheet.absoluteFillObject, { backgroundColor: glass.strongBg }]} />
             <Text style={s.modaleTitolo}>Notifiche</Text>
-            {notificheNonLette.length === 0 ? (
+            {notifiche.length === 0 ? (
               <Text style={s.notificaVuota}>Nessuna notifica al momento.</Text>
             ) : (
-              notificheNonLette.map((n) => (
-                <Pressable key={n.id} style={s.notificaRiga} onPress={() => leggiNotifica(n)}>
-                  <View style={[s.notificaDot, { backgroundColor: coloreNotifica(n.tipo) }]} />
-                  <Text style={s.notificaTesto}>{n.testo}</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.slate} />
-                </Pressable>
-              ))
+              <ScrollView style={s.notificheLista} showsVerticalScrollIndicator={false}>
+                {notifiche.map((n) => (
+                  <Pressable key={n.id} style={s.notificaCard} onPress={() => apriNotifica(n)}>
+                    <View style={[s.notificaBarra, { backgroundColor: coloreNotifica(n.priorita) }]} />
+                    <Ionicons name={iconaTipo(n.tipo)} size={18} color={coloreNotifica(n.priorita)} style={s.notificaIcona} />
+                    <View style={s.notificaCorpo}>
+                      <View style={s.notificaTestata}>
+                        <Text style={s.notificaEmoji}>{emojiPriorita(n.priorita)}</Text>
+                        <Text style={[s.notificaTitolo, { color: colors.navyDeep }, !n.letta && s.notificaTitoloNonLetta]} numberOfLines={1}>
+                          {n.titolo}
+                        </Text>
+                        {!n.letta && <View style={[s.puntinoNonLetta, { backgroundColor: colors.gold }]} />}
+                      </View>
+                      {!!n.corpo && <Text style={[s.notificaSottotitolo, { color: colors.slate }]} numberOfLines={1}>{n.corpo}</Text>}
+                      {!!n.cta_testo && <Text style={[s.notificaCta, { color: coloreNotifica(n.priorita) }]}>→ {n.cta_testo}</Text>}
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
             )}
           </View>
         </Pressable>
@@ -182,10 +184,19 @@ function makeStyles(colors: AppColors, glass: AppGlass) {
     modaleTitolo: { color: colors.navyDeep, fontWeight: '800', fontSize: Font.h3, marginBottom: Spacing.md },
     modaleRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
     modaleRigaText: { color: colors.navyDeep, fontSize: Font.body, fontWeight: '600' },
-    notificheBox: { width: '100%', maxWidth: 360, borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: glass.regularBorder, gap: Spacing.xs },
-    notificaRiga: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
-    notificaDot: { width: 8, height: 8, borderRadius: 4 },
-    notificaTesto: { flex: 1, color: colors.navyDeep, fontSize: Font.small, fontWeight: '600' },
+    notificheBox: { width: '100%', maxWidth: 380, maxHeight: '70%', borderRadius: Radius.card, padding: Spacing.lg, overflow: 'hidden', borderWidth: 1, borderColor: glass.regularBorder },
+    notificheLista: { gap: Spacing.xs },
+    notificaCard: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: glass.regularBorder },
+    notificaBarra: { width: 3, alignSelf: 'stretch', borderRadius: 2 },
+    notificaIcona: { marginTop: 2 },
+    notificaCorpo: { flex: 1, gap: 2 },
+    notificaTestata: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    notificaEmoji: { fontSize: 11 },
+    notificaTitolo: { flex: 1, fontSize: Font.small, fontWeight: '600' },
+    notificaTitoloNonLetta: { fontWeight: '800' },
+    puntinoNonLetta: { width: 7, height: 7, borderRadius: 4 },
+    notificaSottotitolo: { fontSize: Font.small - 1 },
+    notificaCta: { fontSize: Font.small - 1, fontWeight: '700', marginTop: 1 },
     notificaVuota: { color: colors.slate, fontSize: Font.small },
   });
 }

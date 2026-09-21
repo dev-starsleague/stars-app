@@ -17,7 +17,7 @@ import type {
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
   NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione, ProdottoPrivato,
   Campionato, Torneo, CampionatoPartecipante, TorneoPartecipante, CampionatoGirone, CampionatoGiornata, CampionatoMatch,
-  TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante,
+  TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante, Notifica,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -546,6 +546,26 @@ export async function salvaRisultatoRound(roundId: string, payload: {
  *  client, stesso pattern di getPrenotazioniCentro in
  *  stars-system/src/lib/api/giocatori.js. A differenza di getMiePrenotazioni
  *  (solo prenotazioni future, usata in Home) questa copre tutto lo storico. */
+// ---------- Notifiche (centro notifiche dell'header) ----------
+// Righe generate lato backend (app/services/notifiche.py, poll ogni 5
+// minuti) — l'app le legge e basta, non le crea/deriva più da sola (a
+// differenza della versione precedente di questo file, che calcolava una
+// lista client-only da getPartiteGiocatore). Fase 1 del ticket "Sistema
+// notifiche app": solo in-app, nessun push.
+
+/** Più recenti prima — stesso ordinamento del centro notifiche. */
+export async function getNotifiche(giocatoreId: string): Promise<Notifica[]> {
+  if (isMock()) return [];
+  const { data } = await apiGet<Notifica[]>('/notifiche', { giocatore_id: giocatoreId });
+  return sortBy(data ?? [], (n) => n.created_at, { desc: true });
+}
+
+export async function segnaNotificaLetta(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPatch(`/notifiche/${id}`, { letta: true });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 export async function getPartiteGiocatore(giocatoreId: string): Promise<Prenotazione[]> {
   if (isMock()) return mock.mockPrenotazioni();
   // Nessun filtro centro_id qui: un giocatore può aver giocato in centri
