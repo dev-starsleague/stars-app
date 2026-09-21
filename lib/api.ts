@@ -462,6 +462,25 @@ export async function pagaInteroCampo(input: {
   return updatePrenotazione(p.id, { pagamenti, stato_pagamento: 'saldato' });
 }
 
+/** Paga la propria quota di iscrizione a un torneo/campionato con Stars
+ *  Coin (fix utente esplicito, "il buco dei pagamenti": prima la quota
+ *  era solo un numero mostrato, senza alcun modo di saldarla) — stesso
+ *  principio di pagaQuotaPrenotazione sopra. Il PATCH sostituisce l'intero
+ *  dict `pagamenti`, quindi parte sempre da quello attuale. */
+export async function pagaQuotaIscrizione(input: {
+  tipo: 'torneo' | 'campionato'; partecipante: TorneoPartecipante | CampionatoPartecipante;
+  centroId: string; giocatoreId: string; importo: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { tipo, partecipante, centroId, giocatoreId, importo } = input;
+  if (isMock()) return { ok: true };
+  const esito = await movimentoCoin({ centroId, giocatoreId, importo: -importo, motivo: 'pagamento_iscrizione_evento' });
+  if (!esito.ok) return esito;
+  const pagamenti = { ...(partecipante.pagamenti ?? {}), [giocatoreId]: { importo, pagato: true } };
+  const path = tipo === 'torneo' ? `/tornei-partecipanti/${partecipante.id}` : `/campionati-partecipanti/${partecipante.id}`;
+  const { error } = await apiPatch(path, { pagamenti });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 /** Registra il risultato di una partita già giocata — stesso endpoint del
  *  planner (POST /prenotazioni/{id}/risultato), che alimenta sia i punti
  *  classifica sia il PSL Ranking Engine. Richiede almeno un set e un

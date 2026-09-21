@@ -521,6 +521,11 @@ export interface Campionato {
   iscritto?: boolean;
 }
 
+// Quota di iscrizione per giocatore (fix utente esplicito, "il buco dei
+// pagamenti"): { giocatore_id: {importo, pagato} }, stessa forma di
+// PagamentoGiocatore usato per le prenotazioni.
+export type PagamentiIscrizione = Record<string, { importo: number; pagato: boolean }>;
+
 export interface CampionatoPartecipante {
   id: string;
   campionato_id: string;
@@ -529,6 +534,7 @@ export interface CampionatoPartecipante {
   ranking: number;
   girone_id: string | null;
   stato: 'iscritto' | 'ritirato';
+  pagamenti?: PagamentiIscrizione;
 }
 
 export interface Torneo {
@@ -561,6 +567,7 @@ export interface TorneoPartecipante {
   giocatore_2_id: string | null;
   ranking: number;
   stato: 'iscritto' | 'ritirato';
+  pagamenti?: PagamentiIscrizione;
 }
 
 /** Voto di un giocatore su chi pensa vincerà un match non ancora giocato

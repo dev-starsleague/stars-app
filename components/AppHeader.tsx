@@ -43,10 +43,12 @@ function iconaTipo(tipo: string): React.ComponentProps<typeof Ionicons>['name'] 
     if (tipo.endsWith('_concluso')) return 'flag-outline';
     if (tipo.endsWith('_suggerito')) return 'flame-outline';
     if (tipo.endsWith('_iscrizioni_in_chiusura')) return 'alarm-outline';
+    if (tipo.endsWith('_iscrizione_da_completare')) return 'card-outline';
     return 'trophy-outline';
   }
   if (tipo === 'avanzamento_evento') return 'ribbon-outline';
   if (tipo === 'sfida_ricevuta') return 'flash-outline';
+  if (tipo === 'comunicazione_centro') return 'megaphone-outline';
   return 'notifications-outline';
 }
 

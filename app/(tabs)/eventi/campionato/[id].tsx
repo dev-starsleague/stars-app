@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../lib/auth';
-import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, type DettaglioCampionato } from '../../../../lib/api';
+import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, pagaQuotaIscrizione, type DettaglioCampionato } from '../../../../lib/api';
 import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
@@ -53,10 +53,27 @@ export default function CampionatoDettaglio() {
     return (partId: string | null) => (partId ? mappa.get(partId) ?? '—' : 'In attesa');
   }, [dettaglio, giocatoriMap]);
 
-  const mioPartecipanteId = useMemo(
-    () => dettaglio?.partecipanti.find((p) => p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id)?.id ?? null,
+  const mioPartecipante = useMemo(
+    () => dettaglio?.partecipanti.find((p) => p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id) ?? null,
     [dettaglio, me]
   );
+  const mioPartecipanteId = mioPartecipante?.id ?? null;
+
+  // Quota di iscrizione (fix utente esplicito, "il buco dei pagamenti") —
+  // stesso principio del dettaglio torneo.
+  const [pagandoQuota, setPagandoQuota] = useState(false);
+  const mioPagamento = me && mioPartecipante ? mioPartecipante.pagamenti?.[me.id] : null;
+  const pagaQuota = async () => {
+    if (!me || !dettaglio || !mioPartecipante || !mioPagamento) return;
+    setPagandoQuota(true);
+    const res = await pagaQuotaIscrizione({
+      tipo: 'campionato', partecipante: mioPartecipante, centroId: dettaglio.campionato.centro_id,
+      giocatoreId: me.id, importo: mioPagamento.importo,
+    });
+    setPagandoQuota(false);
+    if (res.ok) { avvisa('Pagamento registrato', 'Quota di iscrizione saldata.'); load(); }
+    else avvisa('Errore', res.error ?? 'Pagamento non riuscito.');
+  };
 
   // ISCRIVITI (fix utente esplicito, Eventi "Iscriviti": "il tasto
   // ISCRIVITI come prima cosa") — solo mentre le iscrizioni sono aperte;
@@ -149,7 +166,15 @@ export default function CampionatoDettaglio() {
               {campionato.quota_iscrizione_a_giocatore ? ` · ${campionato.quota_iscrizione_a_giocatore}€` : ''}
             </Muted>
             {mioPartecipanteId ? (
-              <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
+              <View>
+                <View style={s.iscritto}><Ionicons name="checkmark-circle" size={18} color={colors.green} /><Text style={s.iscrittoText}>Sei iscritto</Text></View>
+                {mioPagamento && !mioPagamento.pagato && (
+                  <Button
+                    title={pagandoQuota ? 'Pagamento…' : `Paga quota (${mioPagamento.importo}€) con Stars Coin`}
+                    loading={pagandoQuota} onPress={pagaQuota} style={{ marginTop: Spacing.sm }}
+                  />
+                )}
+              </View>
             ) : (
               <Button
                 title={iscrivendo ? 'Iscrizione…' : campionato.tipo_iscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'}
