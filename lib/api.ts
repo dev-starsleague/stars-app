@@ -246,11 +246,18 @@ export async function updatePrenotazione(
  *  opportunità di gioco già reali nel sistema (partite in attesa o
  *  confermate ma incomplete) ordinate per compatibilità — vedi
  *  GET /matchmaking/cerca sul backend, che fa tutto il lavoro (ricerca +
- *  punteggio): qui solo la chiamata. */
+ *  punteggio): qui solo la chiamata. Filtrate ai prossimi 5 giorni (fix
+ *  utente esplicito: "il giocatore può vedere la lista delle partite nei
+ *  prossimi 5 giorni") — il backend esclude solo le date già passate,
+ *  nessun limite superiore; le opportunità senza data ancora fissata
+ *  (`data: null`, in attesa di abbinamento) restano visibili comunque: non
+ *  hanno una data da confrontare con la finestra. */
 export async function cercaMatchmaking(giocatoreId: string, sport: string): Promise<OpportunitaMatchmaking[]> {
   if (isMock()) return [];
   const { data } = await apiGet<OpportunitaMatchmaking[]>('/matchmaking/cerca', { giocatore_id: giocatoreId, sport });
-  return data ?? [];
+  const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+  const limite = new Date(oggi); limite.setDate(limite.getDate() + 5);
+  return (data ?? []).filter((o) => !o.data || (new Date(`${o.data}T00:00:00`) <= limite));
 }
 
 /** Il giocatore entra in lista d'attesa presso un centro invece di unirsi a

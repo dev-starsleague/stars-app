@@ -12,7 +12,7 @@ import { useTheme } from '../lib/theme';
 import { useAuth } from '../lib/auth';
 import { useSport } from '../lib/sport';
 import { avvisa } from '../lib/avviso';
-import { cercaMatchmaking, entraInMatch, entraInAttesa, centriPreferiti, getCentri } from '../lib/api';
+import { cercaMatchmaking, entraInMatch, entraInAttesa, centriPreferiti, getCentri, getMiePrenotazioniInAttesa } from '../lib/api';
 import { Avatar, Chip, Input } from './ui';
 import { Spacing, Radius, Font, type AppColors } from '../constants/theme';
 import type { OpportunitaMatchmaking, Centro, GiocatoreMinimo, PreferenzaAttesa } from '../types/models';
@@ -84,6 +84,15 @@ function etichettaData(data: string | null, inizio: string | null, fine: string 
   return `${giorno} ${gg}/${mm}${orario}`;
 }
 
+// Bordo colorato per compatibilità (fix utente esplicito): rosso sotto il
+// 50%, giallo 51–75%, verde 76–95%, oro 96–100%.
+function coloreCompatibilita(pct: number, colors: AppColors): string {
+  if (pct <= 50) return colors.red;
+  if (pct <= 75) return colors.amber;
+  if (pct <= 95) return colors.green;
+  return colors.gold;
+}
+
 export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; onChiudi: () => void }) {
   const { colors, glass, scheme } = useTheme();
   const { me } = useAuth();
@@ -92,21 +101,24 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
   const [opportunita, setOpportunita] = useState<OpportunitaMatchmaking[]>([]);
   const [centriScelta, setCentriScelta] = useState<Centro[]>([]);
   const [azioneInCorso, setAzioneInCorso] = useState<string | null>(null);
-  // Preferenza di giorno/ora per la lista d'attesa (fix utente esplicito:
-  // "devo poter decidere una preferenza di giorno ed ora") — tutta
-  // facoltativa, puramente informativa per lo staff del gestionale.
-  const [prefGiorno, setPrefGiorno] = useState<string | null>(null);
-  const [prefInizio, setPrefInizio] = useState('');
-  const [prefFine, setPrefFine] = useState('');
+  // Già in lista d'attesa altrove (fix utente esplicito: "ogni giocatore
+  // potrà aprire 1 partita sola") — se sì, "Entra in lista d'attesa" resta
+  // disabilitato invece di crearne una seconda.
+  const [giaInAttesa, setGiaInAttesa] = useState(false);
+  // Preferenza per la lista d'attesa (fix utente esplicito: "inserendo più
+  // giorni e più fasce orarie", prima un solo giorno e una sola fascia) —
+  // tutta facoltativa, puramente informativa per lo staff del gestionale.
+  const [prefGiorni, setPrefGiorni] = useState<string[]>([]);
+  const [prefFasce, setPrefFasce] = useState<{ inizio: string; fine: string }[]>([{ inizio: '', fine: '' }]);
   const stepAnim = useRef(FASI_ANALISI.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     if (!visibile || !me) return;
     setFase('analisi');
     setOpportunita([]);
-    setPrefGiorno(null);
-    setPrefInizio('');
-    setPrefFine('');
+    setPrefGiorni([]);
+    setPrefFasce([{ inizio: '', fine: '' }]);
+    getMiePrenotazioniInAttesa(me.id).then((p) => setGiaInAttesa(p.length > 0));
     stepAnim.forEach((v) => v.setValue(0));
 
     const animazione = new Promise<void>((resolve) => {
@@ -137,9 +149,10 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
 
   const entraAttesaSuCentro = async (centroId: string) => {
     setAzioneInCorso('attesa');
+    const fasceValide = prefFasce.filter((f) => f.inizio.trim() || f.fine.trim());
     const preferenza: PreferenzaAttesa | null =
-      prefGiorno || prefInizio.trim() || prefFine.trim()
-        ? { giorno: prefGiorno, inizio: prefInizio.trim() || null, fine: prefFine.trim() || null }
+      prefGiorni.length > 0 || fasceValide.length > 0
+        ? { giorni: prefGiorni.length > 0 ? prefGiorni : null, fasce: fasceValide.length > 0 ? fasceValide : null }
         : null;
     const res = await entraInAttesa({ giocatoreId: me.id, centroId, sport: sportAttivo, preferenza });
     setAzioneInCorso(null);
@@ -150,6 +163,11 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
       avvisa('Non è stato possibile entrare in lista d’attesa', res.error);
     }
   };
+  const toggleGiorno = (g: string) => setPrefGiorni((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
+  const aggiungiFascia = () => setPrefFasce((cur) => [...cur, { inizio: '', fine: '' }]);
+  const rimuoviFascia = (i: number) => setPrefFasce((cur) => cur.filter((_, idx) => idx !== i));
+  const modificaFascia = (i: number, campo: 'inizio' | 'fine', valore: string) =>
+    setPrefFasce((cur) => cur.map((f, idx) => (idx === i ? { ...f, [campo]: valore } : f)));
 
   // Step 1: chiede la preferenza di giorno/ora (fix utente esplicito) prima
   // di procedere alla scelta del centro (se ce n'è più di uno preferito) o
@@ -176,7 +194,7 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
 
   return (
     <View style={styles.radice}>
-      <Text style={[styles.titolo, { color: colors.labelPrimary }]}>Matchmaking</Text>
+      <Text style={[styles.titolo, { color: colors.labelPrimary }]}>Stars Matchmaking</Text>
       <Text style={[styles.sottotitolo, { color: colors.labelSecondary }]}>{sportAttivo}</Text>
 
       {fase === 'analisi' && (
@@ -203,8 +221,22 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
                 Nessuna partita compatibile trovata al momento. Entra in lista d’attesa: ti avviseremo appena troviamo un abbinamento.
               </Text>
             ) : (
-              opportunita.map((opp) => (
-                <View key={opp.prenotazione_id} style={[styles.card, { backgroundColor: glass.regularBg, borderColor: glass.regularBorder }]}>
+              opportunita.map((opp) => {
+                // Bordo colorato per % di compatibilità (fix utente esplicito).
+                const bordo = coloreCompatibilita(opp.punteggio_compatibilita, colors);
+                // Coppia A / Coppia B (fix utente esplicito) — solo per il
+                // doppio, dove il concetto di "coppia" esiste davvero;
+                // metà posti per lato, stesso split posizionale usato altrove
+                // nell'app quando non c'è una squadra esplicita salvata
+                // (es. lib/api.ts gameVintiPersiPartita).
+                const doppio = opp.formato === 'doppio';
+                const metaPosti = Math.ceil(opp.posti_totali / 2);
+                const giocatoriA = opp.giocatori_presenti.slice(0, metaPosti);
+                const giocatoriB = opp.giocatori_presenti.slice(metaPosti);
+                const vuotiA = Math.max(0, metaPosti - giocatoriA.length);
+                const vuotiB = Math.max(0, (opp.posti_totali - metaPosti) - giocatoriB.length);
+                return (
+                <View key={opp.prenotazione_id} style={[styles.card, { backgroundColor: glass.regularBg, borderColor: bordo, borderWidth: 1.5 }]}>
                   <View style={styles.cardTesta}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.cardCentro, { color: colors.labelPrimary }]} numberOfLines={1}>
@@ -212,7 +244,7 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
                       </Text>
                       <Text style={[styles.cardData, { color: colors.labelSecondary }]}>{etichettaData(opp.data, opp.inizio, opp.fine)}</Text>
                     </View>
-                    <View style={[styles.chipPunteggio, { backgroundColor: colors.gold }]}>
+                    <View style={[styles.chipPunteggio, { backgroundColor: bordo }]}>
                       <Text style={styles.chipPunteggioTesto}>{opp.punteggio_compatibilita}%</Text>
                     </View>
                   </View>
@@ -220,12 +252,31 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
                       utente esplicito): uno slot per ogni posto del
                       formato, pieno (avatar squircle + nome + ranking/DX-SX)
                       o vuoto (tratteggiato) per i posti ancora liberi. */}
-                  <View style={styles.slotGrid}>
-                    {opp.giocatori_presenti.map((g) => <SlotMini key={g.id} giocatore={g} colors={colors} />)}
-                    {Array.from({ length: Math.max(0, opp.posti_totali - opp.posti_occupati) }).map((_, i) => (
-                      <SlotMiniVuoto key={`vuoto-${i}`} colors={colors} />
-                    ))}
-                  </View>
+                  {doppio ? (
+                    <View style={styles.coppieRow}>
+                      <View style={styles.coppiaCol}>
+                        <Text style={[styles.coppiaLabel, { color: colors.labelSecondary }]}>Coppia A</Text>
+                        <View style={styles.slotGrid}>
+                          {giocatoriA.map((g) => <SlotMini key={g.id} giocatore={g} colors={colors} />)}
+                          {Array.from({ length: vuotiA }).map((_, i) => <SlotMiniVuoto key={`vA-${i}`} colors={colors} />)}
+                        </View>
+                      </View>
+                      <View style={styles.coppiaCol}>
+                        <Text style={[styles.coppiaLabel, { color: colors.labelSecondary }]}>Coppia B</Text>
+                        <View style={styles.slotGrid}>
+                          {giocatoriB.map((g) => <SlotMini key={g.id} giocatore={g} colors={colors} />)}
+                          {Array.from({ length: vuotiB }).map((_, i) => <SlotMiniVuoto key={`vB-${i}`} colors={colors} />)}
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.slotGrid}>
+                      {opp.giocatori_presenti.map((g) => <SlotMini key={g.id} giocatore={g} colors={colors} />)}
+                      {Array.from({ length: Math.max(0, opp.posti_totali - opp.posti_occupati) }).map((_, i) => (
+                        <SlotMiniVuoto key={`vuoto-${i}`} colors={colors} />
+                      ))}
+                    </View>
+                  )}
                   <Pressable
                     disabled={azioneInCorso === opp.prenotazione_id}
                     onPress={() => partecipa(opp)}
@@ -233,39 +284,64 @@ export function MatchmakingPanel({ visibile, onChiudi }: { visibile: boolean; on
                     <Text style={styles.bottonePartecipaTesto}>Partecipa</Text>
                   </Pressable>
                 </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
-          <Pressable onPress={apriPreferenza} style={[styles.bottoneAttesa, { borderColor: colors.gold }]}>
+          {/* "1 partita sola" (fix utente esplicito): se il giocatore ha
+              già un'attesa aperta, il tasto resta disabilitato invece di
+              permettergliene una seconda. */}
+          <Pressable
+            onPress={apriPreferenza} disabled={giaInAttesa}
+            style={[styles.bottoneAttesa, { borderColor: colors.gold, opacity: giaInAttesa ? 0.5 : 1 }]}>
             <Ionicons name="time-outline" size={16} color={colors.gold} />
-            <Text style={[styles.bottoneAttesaTesto, { color: colors.gold }]}>Entra in lista d’attesa</Text>
+            <Text style={[styles.bottoneAttesaTesto, { color: colors.gold }]}>
+              {giaInAttesa ? 'Hai già un’attesa aperta' : 'Entra in lista d’attesa'}
+            </Text>
           </Pressable>
         </>
       )}
 
       {fase === 'preferenza' && (
-        <View style={styles.listaFasi}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.listaFasi} showsVerticalScrollIndicator={false}>
           <Text style={[styles.testoFase, { color: colors.labelSecondary, marginBottom: Spacing.sm }]}>
-            Vuoi indicare un giorno o un orario preferito? Facoltativo — lo staff del centro ne terrà conto.
+            Vuoi indicare uno o più giorni e fasce orarie preferiti? Facoltativo — lo staff del centro ne terrà conto.
           </Text>
+          {/* Più giorni insieme (fix utente esplicito: "inserendo più
+              giorni e più fasce orarie", prima un solo giorno selezionabile). */}
           <View style={styles.chipsGiorno}>
-            <Chip label="Qualsiasi giorno" active={prefGiorno === null} onPress={() => setPrefGiorno(null)} />
             {GIORNI_BREVI.map((g) => (
-              <Chip key={g} label={g} active={prefGiorno === g} onPress={() => setPrefGiorno(g)} />
+              <Chip key={g} label={g} active={prefGiorni.includes(g)} onPress={() => toggleGiorno(g)} />
             ))}
           </View>
-          <View style={styles.rigaOrari}>
-            <Input style={{ flex: 1 }} value={prefInizio} onChangeText={setPrefInizio} placeholder="Dalle (18:00)" />
-            <Text style={{ color: colors.labelSecondary }}>–</Text>
-            <Input style={{ flex: 1 }} value={prefFine} onChangeText={setPrefFine} placeholder="Alle (20:00)" />
-          </View>
+          <Text style={[styles.testoFase, { color: colors.labelSecondary, marginTop: Spacing.md }]}>
+            {prefGiorni.length === 0 ? 'Nessun giorno selezionato = qualsiasi giorno.' : ''}
+          </Text>
+          {/* Più fasce orarie (fix utente esplicito) — una riga per fascia,
+              con la possibilità di aggiungerne altre. */}
+          {prefFasce.map((f, i) => (
+            <View key={i} style={styles.rigaOrari}>
+              <Input style={{ flex: 1 }} value={f.inizio} onChangeText={(v) => modificaFascia(i, 'inizio', v)} placeholder="Dalle (18:00)" />
+              <Text style={{ color: colors.labelSecondary }}>–</Text>
+              <Input style={{ flex: 1 }} value={f.fine} onChangeText={(v) => modificaFascia(i, 'fine', v)} placeholder="Alle (20:00)" />
+              {prefFasce.length > 1 && (
+                <Pressable onPress={() => rimuoviFascia(i)} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={colors.labelSecondary} />
+                </Pressable>
+              )}
+            </View>
+          ))}
+          <Pressable onPress={aggiungiFascia} style={styles.aggiungiFasciaBtn} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={16} color={colors.gold} />
+            <Text style={{ color: colors.gold, fontWeight: '700', fontSize: Font.small }}>Aggiungi un'altra fascia</Text>
+          </Pressable>
           <Pressable
             disabled={!!azioneInCorso}
             onPress={confermaPreferenza}
             style={[styles.bottonePartecipa, { backgroundColor: colors.gold, width: '100%', marginTop: Spacing.md }]}>
             <Text style={styles.bottonePartecipaTesto}>Continua</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       )}
 
       {fase === 'centro' && (
@@ -308,6 +384,11 @@ const styles = StyleSheet.create({
   // Griglia slot giocatori — stesso linguaggio di Prenota → Invita
   // giocatori (fix utente esplicito).
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  // Coppia A / Coppia B (fix utente esplicito) — due colonne affiancate,
+  // ciascuna con la propria etichetta sopra la sua mini-griglia di slot.
+  coppieRow: { flexDirection: 'row', gap: Spacing.sm },
+  coppiaCol: { flex: 1, gap: 4 },
+  coppiaLabel: { fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
   slotMini: {
     width: 74, borderRadius: Radius.md, padding: Spacing.xs, alignItems: 'center',
     gap: 3, borderWidth: 1,
@@ -325,6 +406,7 @@ const styles = StyleSheet.create({
   bottoneAttesaTesto: { fontSize: Font.small, fontWeight: '700' },
   chipsGiorno: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   rigaOrari: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.md },
+  aggiungiFasciaBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.sm, alignSelf: 'flex-start' },
   rigaCentro: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1, borderRadius: Radius.control, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,

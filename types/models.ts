@@ -184,12 +184,22 @@ export interface Prenotazione {
 // l'app può effettivamente scrivere (vedi pagaQuotaPrenotazione).
 export interface PagamentoGiocatore { importo: number; pagato: boolean; metodo?: 'coin' | 'non_categorizzato' }
 
-/** Preferenza di giorno/ora scelta entrando in lista d'attesa (fix utente
- *  esplicito) — tutti e tre i campi opzionali. */
+/** Preferenza di giorni/fasce orarie scelta entrando in lista d'attesa —
+ *  più giorni e più fasce insieme (fix utente esplicito, Stars Matchmaking:
+ *  "inserendo più giorni e più fasce orarie", prima un solo giorno e una
+ *  sola fascia). `giorno`/`inizio`/`fine` restano per leggere le voci
+ *  storiche create prima di questo cambio (stessa colonna JSON libera,
+ *  nessuna migrazione: il lettore ricade su questi se `giorni`/`fasce`
+ *  non ci sono). */
 export interface PreferenzaAttesa {
-  giorno?: string | null; // "Lun"|"Mar"|"Mer"|"Gio"|"Ven"|"Sab"|"Dom" o null = qualsiasi
-  inizio?: string | null; // "HH:MM"
-  fine?: string | null; // "HH:MM"
+  giorni?: string[] | null; // ["Lun","Mer",...] o vuoto/null = qualsiasi giorno
+  fasce?: { inizio: string; fine: string }[] | null; // più intervalli "HH:MM"–"HH:MM"
+  /** @deprecated singolo giorno, da voci create prima del multi-selezione */
+  giorno?: string | null;
+  /** @deprecated singola fascia (inizio), da voci create prima del multi-selezione */
+  inizio?: string | null;
+  /** @deprecated singola fascia (fine), da voci create prima del multi-selezione */
+  fine?: string | null;
 }
 
 /** Sfida diretta tra due giocatori dal profilo pubblico (fix utente

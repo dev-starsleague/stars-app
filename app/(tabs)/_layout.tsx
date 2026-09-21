@@ -190,13 +190,20 @@ function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         Animated.timing(boxH, { toValue: origine.h, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
         Animated.timing(expandAnim, { toValue: 0, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       ]).start(() => {
-        spinAnim.setValue(0);
-        Animated.parallel([
-          Animated.timing(posX, { toValue: origine.x, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
-          Animated.timing(posY, { toValue: origine.y, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
-          Animated.timing(riseAnim, { toValue: 0, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        ]).start(() => {
-          setPopupVisibile(false);
+        // Anche alla chiusura la stella gira (fix utente esplicito) — ma
+        // in verso OPPOSTO: spinAnim torna da 1 a 0 invece di andare da 0
+        // a 1, quindi spinRotate (0deg→1080deg) percorre gli stessi gradi
+        // ma decrescendo — la stessa identica interpolazione basta, non ne
+        // serve una seconda: la direzione la decide il verso del value,
+        // non un range diverso.
+        Animated.timing(spinAnim, { toValue: 0, duration: 450, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => {
+          Animated.parallel([
+            Animated.timing(posX, { toValue: origine.x, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
+            Animated.timing(posY, { toValue: origine.y, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
+            Animated.timing(riseAnim, { toValue: 0, duration: 340, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          ]).start(() => {
+            setPopupVisibile(false);
+          });
         });
       });
     });

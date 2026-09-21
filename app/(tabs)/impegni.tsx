@@ -621,9 +621,17 @@ export default function Impegni() {
                       const titolo = p.sfida
                         ? (avversario ? `Sfida con ${avversario.nome} ${avversario.cognome}` : 'Sfida')
                         : (centriMap.get(p.centro_id)?.nome ?? 'Centro');
+                      // Più giorni/fasce (fix utente esplicito, Stars
+                      // Matchmaking) — ricade sui campi singoli legacy
+                      // (giorno/inizio/fine) per le voci create prima del
+                      // multi-selezione, stessa colonna JSON libera.
                       const pref = p.preferenza_attesa;
-                      const propostaTesto = pref && (pref.giorno || pref.inizio)
-                        ? `Proposta: ${pref.giorno ?? ''}${pref.inizio ? ` ${pref.inizio}${pref.fine ? `–${pref.fine}` : ''}` : ''}`.trim()
+                      const giorniTesto = pref?.giorni?.length ? pref.giorni.join(', ') : pref?.giorno ?? '';
+                      const fasceTesto = pref?.fasce?.length
+                        ? pref.fasce.map((f) => `${f.inizio}${f.fine ? `–${f.fine}` : ''}`).join(', ')
+                        : pref?.inizio ? `${pref.inizio}${pref.fine ? `–${pref.fine}` : ''}` : '';
+                      const propostaTesto = giorniTesto || fasceTesto
+                        ? `Proposta: ${giorniTesto}${fasceTesto ? ` ${fasceTesto}` : ''}`.trim()
                         : null;
                       return (
                         <View key={p.id} style={{ position: 'relative' }}>
