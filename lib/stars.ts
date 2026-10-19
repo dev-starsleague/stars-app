@@ -92,6 +92,13 @@ export function iconaSport(sport: string): string {
 // scheda per un attimo prima che i dati confermino che è vuota.
 export const SPORT_SINGOLI = ['Tennis'];
 
+// Sport con il SOLO ranking individuale (fix utente esplicito): niente
+// "Star del mese" né categorie a stelle. Il Calcio ha un motore suo nel
+// gestionale (stars-system backend/app/services/ranking_calcio.py), scala
+// 0,00-5,00, si parte da 2,50 alla prima partita registrata dal centro —
+// stesso elenco di stars-system/frontend/src/lib/sport.js SPORT_SOLO_RANKING.
+export const SPORT_SOLO_RANKING = ['Calcio'];
+
 // Categoria del giocatore per il PSL Ranking Engine — stessa identica
 // formula del gestionale (stars-system/src/routes/classifiche/+page.svelte
 // categoriaRanking), portata qui 1:1 per restare coerenti tra le due app:

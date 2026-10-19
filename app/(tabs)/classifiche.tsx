@@ -16,7 +16,7 @@ import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { useSport } from '../../lib/sport';
-import { categoriaRanking, CATEGORIE_RANKING } from '../../lib/stars';
+import { categoriaRanking, CATEGORIE_RANKING, SPORT_SOLO_RANKING } from '../../lib/stars';
 import {
   getCentri, getClassificaRanking, getClassifica, centriPreferiti,
 } from '../../lib/api';
@@ -43,6 +43,11 @@ export default function Classifiche() {
 
   useEffect(() => { getCentri().then(setCentri); }, []);
 
+  // Calcio: solo il Ranking, niente "Star del mese" (non ha una classifica
+  // mensile) — si torna al Ranking se si cambia sport stando lì.
+  const soloRanking = SPORT_SOLO_RANKING.includes(sportAttivo);
+  useEffect(() => { if (soloRanking) setSezione('ranking'); }, [soloRanking]);
+
   const opzioniSezione = [
     { value: 'ranking' as const, label: 'Ranking', icon: 'trophy-outline' as const },
     { value: 'stelle' as const, label: '⭐ Star del mese' },
@@ -51,11 +56,13 @@ export default function Classifiche() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <AppHeader />
-      <View style={s.segmentoWrap}>
-        <Segmented value={sezione} onChange={(v) => setSezione(v as Sezione)} options={opzioniSezione} />
-      </View>
-      {sezione === 'ranking' && <SezioneRanking sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
-      {sezione === 'stelle' && <SezioneStelle sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
+      {!soloRanking && (
+        <View style={s.segmentoWrap}>
+          <Segmented value={sezione} onChange={(v) => setSezione(v as Sezione)} options={opzioniSezione} />
+        </View>
+      )}
+      {(sezione === 'ranking' || soloRanking) && <SezioneRanking sportAttivo={sportAttivo} soloRanking={soloRanking} centri={centri} colors={colors} s={s} />}
+      {sezione === 'stelle' && !soloRanking && <SezioneStelle sportAttivo={sportAttivo} centri={centri} colors={colors} s={s} />}
     </SafeAreaView>
   );
 }
@@ -63,8 +70,8 @@ export default function Classifiche() {
 // ============================================================
 // Sezione 1 — Ranking / RanQueen
 // ============================================================
-function SezioneRanking({ sportAttivo, centri, colors, s }: {
-  sportAttivo: string; centri: Centro[]; colors: AppColors; s: ReturnType<typeof makeStyles>;
+function SezioneRanking({ sportAttivo, soloRanking, centri, colors, s }: {
+  sportAttivo: string; soloRanking: boolean; centri: Centro[]; colors: AppColors; s: ReturnType<typeof makeStyles>;
 }) {
   const router = useRouter();
   const { me } = useAuth();
@@ -85,11 +92,11 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const righeFiltrate = useMemo(() => {
-    let r = categoria ? righe.filter((x) => categoriaRanking(x.ranking) === categoria) : righe;
+    let r = categoria && !soloRanking ? righe.filter((x) => categoriaRanking(x.ranking) === categoria) : righe;
     const q = ricerca.trim().toLowerCase();
     if (q) r = r.filter((x) => nomeCompleto(x.giocatore).toLowerCase().includes(q));
     return r;
-  }, [righe, categoria, ricerca]);
+  }, [righe, categoria, ricerca, soloRanking]);
 
   const righeGeneriche: RigaGenerica[] = righeFiltrate.map((r) => ({
     key: r.giocatore_id,
@@ -104,7 +111,7 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
     onPress: () => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: r.giocatore_id } }),
   }));
 
-  const filtriAttivi = (filtro.tipo !== 'globale' ? 1 : 0) + (categoria ? 1 : 0);
+  const filtriAttivi = (filtro.tipo !== 'globale' ? 1 : 0) + (categoria && !soloRanking ? 1 : 0);
   const etichettaAmbito = filtro.tipo === 'centro' ? centri.find((c) => c.id === filtro.centroId)?.nome
     : filtro.tipo === 'zona' ? filtro.zonaValore
     : 'Tutta Italia';
@@ -154,7 +161,7 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
           </View>
           {/* Riepilogo filtri: ambito + categoria, non più lo sport (fix
               utente esplicito, "bisogna levare lo sport" — c'è già nell'header). */}
-          <Muted style={{ marginBottom: ricercaAperta ? Spacing.sm : 0 }}>{etichettaAmbito}{categoria ? ` · ${categoria}` : ''}</Muted>
+          <Muted style={{ marginBottom: ricercaAperta ? Spacing.sm : 0 }}>{etichettaAmbito}{soloRanking ? ' · scala 0–5' : categoria ? ` · ${categoria}` : ''}</Muted>
           {ricercaAperta && (
             <Input icon="search" placeholder="Cerca giocatore…" value={ricerca} onChangeText={setRicerca} style={{ height: 42 }} autoFocus />
           )}
@@ -165,14 +172,14 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
         ) : (
           <Classifica
             righe={righeGeneriche} coloreValore={colors.navyDeep} unitaValore=""
-            vuoto={`Nessun giocatore ${genere === 'M' ? 'valutato' : 'valutata'} ${categoria ? `nella categoria ${categoria}` : ''} per ${sportAttivo} qui.`}
+            vuoto={`Nessun giocatore ${genere === 'M' ? 'valutato' : 'valutata'} ${categoria && !soloRanking ? `nella categoria ${categoria}` : ''} per ${sportAttivo} qui.`}
             mioKey={me?.id} onMioLayout={onMioLayout} colors={colors} s={s}
           />
         )}
 
         {mostraFiltri && (
           <ModaleFiltriRanking
-            centri={centri} filtro={filtro} categoria={categoria}
+            centri={centri} filtro={filtro} categoria={categoria} senzaCategorie={soloRanking}
             onChiudi={() => setMostraFiltri(false)}
             onApplica={(f, c) => { setFiltro(f); setCategoria(c); setMostraFiltri(false); }}
           />
@@ -196,8 +203,8 @@ function SezioneRanking({ sportAttivo, centri, colors, s }: {
   );
 }
 
-function ModaleFiltriRanking({ centri, filtro, categoria, onChiudi, onApplica }: {
-  centri: Centro[]; filtro: FiltroClassificaRanking; categoria: string | null;
+function ModaleFiltriRanking({ centri, filtro, categoria, senzaCategorie, onChiudi, onApplica }: {
+  centri: Centro[]; filtro: FiltroClassificaRanking; categoria: string | null; senzaCategorie?: boolean;
   onChiudi: () => void; onApplica: (f: FiltroClassificaRanking, c: string | null) => void;
 }) {
   const { colors, glass, scheme } = useTheme();
@@ -288,6 +295,7 @@ function ModaleFiltriRanking({ centri, filtro, categoria, onChiudi, onApplica }:
               </>
             )}
 
+            {!senzaCategorie && (<>
             <Text style={[s.sottoTitolo, { marginTop: Spacing.md }]}>Categoria</Text>
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
               <Pressable style={[s.pillScelta, !cat && s.pillSceltaAttiva]} onPress={() => setCat(null)}>
@@ -299,6 +307,7 @@ function ModaleFiltriRanking({ centri, filtro, categoria, onChiudi, onApplica }:
                 </Pressable>
               ))}
             </View>
+            </>)}
           </ScrollView>
 
           <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg }}>

@@ -19,7 +19,7 @@ import { AppHeader } from '../../components/AppHeader';
 import { Card, Chip, IconBadge, IconButton, Muted, Segmented, immagineProfiloDefault } from '../../components/ui';
 import { RankingChart } from '../../components/RankingChart';
 import { SocialInsightsCard } from '../../components/HomeCarousel';
-import { BADGE_CATALOGO } from '../../lib/stars';
+import { BADGE_CATALOGO, SPORT_SOLO_RANKING } from '../../lib/stars';
 import { Radius, Spacing, Font, AppColors, AppGlass } from '../../constants/theme';
 import type {
   Centro, EventoStorico, ManoDominante, Posizione, Prenotazione, Tessera,
@@ -238,6 +238,13 @@ export default function Profilo() {
               <Card style={s.emptyBox}>
                 <Text style={s.emptyIcon}>🎯</Text>
                 <Text style={s.emptyTitle}>Zero partite, zero gloria.</Text>
+                {SPORT_SOLO_RANKING.includes(sportAttivo) ? (
+                  // Calcio: nessuna valutazione iniziale — il profilo nasce
+                  // a 2,50 alla prima partita registrata dal centro
+                  <Muted style={{ textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
+                    Il tuo ranking {sportAttivo} parte da 2,50 (su una scala da 0 a 5) alla prima partita registrata dal centro, e poi si aggiorna da solo dopo ogni partita.
+                  </Muted>
+                ) : (<>
                 <Muted style={{ textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
                   Il tuo ranking si aggiorna automaticamente dopo ogni partita competitiva. Prima però dobbiamo valutare il tuo livello di gioco.
                 </Muted>
@@ -245,6 +252,7 @@ export default function Profilo() {
                   <Ionicons name="trending-up" size={16} color={colors.navyDeep} />
                   <Text style={s.scopriText}>Scopri il tuo ranking</Text>
                 </Pressable>
+                </>)}
               </Card>
             )}
           </Card>
