@@ -16,7 +16,7 @@ import { SquircleView } from 'react-native-figma-squircle';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { useSport } from '../../lib/sport';
-import { categoriaRanking, CATEGORIE_RANKING, SPORT_SOLO_RANKING } from '../../lib/stars';
+import { categoriaRanking, CATEGORIE_RANKING, etichettaCategoria, SPORT_SOLO_RANKING } from '../../lib/stars';
 import {
   getCentri, getClassificaRanking, getClassifica, centriPreferiti,
 } from '../../lib/api';
@@ -389,7 +389,7 @@ function SezioneStelle({ sportAttivo, centri, colors, s }: {
     iniziali: iniziali(r.giocatore?.nome),
     genere: r.giocatore?.genere,
     titolo: nomeCompleto(r.giocatore),
-    sottotitolo: `${categoriaRanking(rankingMap.get(r.giocatore_id) ?? null)} · ${r.partite} partit${r.partite === 1 ? 'a' : 'e'}`,
+    sottotitolo: `${etichettaCategoria(categoriaRanking(rankingMap.get(r.giocatore_id) ?? null))} · ${r.partite} partit${r.partite === 1 ? 'a' : 'e'}`,
     valore: `${r.punti}`,
     onPress: () => router.push({ pathname: '/(tabs)/giocatore/[id]', params: { id: r.giocatore_id } }),
   }));

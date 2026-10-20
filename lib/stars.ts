@@ -114,6 +114,13 @@ export function categoriaRanking(valore: number | null | undefined): string {
 // debole, "Non valutato" per ultimo perché non è davvero una fascia di
 // livello.
 export const CATEGORIE_RANKING = ['8⭐', '7⭐', '6⭐', '5⭐', '4⭐', '3⭐', '2⭐', '1⭐', 'Spark', 'Non valutato'];
+// Testo mostrato sotto il nome in classifica (fix utente esplicito): chi
+// non è ancora profilato/valutato si legge "In valutazione". Solo
+// etichetta — il valore resta "Non valutato" perché è quello salvato nelle
+// categorie_ammesse e usato dai filtri/backend.
+export function etichettaCategoria(categoria: string): string {
+  return categoria === 'Non valutato' ? 'In valutazione' : categoria;
+}
 
 // Stato iscrizioni di un evento/campionato/torneo (fix utente esplicito,
 // Eventi "Iscriviti": "in arrivo" arancione, "aperte" verde, "sold out" o
