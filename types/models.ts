@@ -537,6 +537,7 @@ export interface CampionatoPartecipante {
   girone_id: string | null;
   stato: 'iscritto' | 'ritirato';
   pagamenti?: PagamentiIscrizione;
+  disponibilita?: Record<string, FasciaOraria[]> | null;
 }
 
 export interface Torneo {

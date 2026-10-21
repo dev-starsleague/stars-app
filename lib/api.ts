@@ -1839,6 +1839,7 @@ export interface EventoStandardPartecipante {
   ranking: number;
   stato: 'iscritto' | 'incompleta' | 'ritirato';
   proposta_coppia: PropostaCoppia | null;
+  disponibilita?: Record<string, FasciaOraria[]> | null;
 }
 
 export async function getCampionatiInIscrizione(): Promise<EventoStandard[]> {
@@ -1900,4 +1901,16 @@ export async function getEventiStandardIscritti(giocatoreId: string): Promise<st
     apiGet<EventoStandardPartecipante[]>('/eventi-standard-partecipanti', { giocatore_2_id: giocatoreId }),
   ]);
   return [...(p1 ?? []), ...(p2 ?? [])].filter((p) => p.stato !== 'ritirato').map((p) => p.evento_standard_id);
+}
+
+/** Disponibilità di un'iscrizione a un campionato (in iscrizione o già
+ *  generato): il centro può iscrivere senza, il giocatore la completa da
+ *  qui entro l'inizio (promemoria giornaliero, fix utente esplicito). */
+export async function aggiornaDisponibilitaIscrizione(
+  tipo: 'standard' | 'campionato', partecipanteId: string, disponibilita: Record<string, FasciaOraria[]>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const base = tipo === 'standard' ? '/eventi-standard-partecipanti' : '/campionati-partecipanti';
+  const { error } = await apiPatch(`${base}/${partecipanteId}`, { disponibilita });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }

@@ -5,10 +5,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../lib/auth';
-import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, pagaQuotaIscrizione, type DettaglioCampionato } from '../../../../lib/api';
+import { aggiornaDisponibilitaIscrizione, getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, pagaQuotaIscrizione, type DettaglioCampionato } from '../../../../lib/api';
 import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
+import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { contaGiorniUtili, giorniMinimi } from '../../../../lib/disponibilita';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
 import {
@@ -158,6 +159,17 @@ export default function CampionatoDettaglio() {
               <Text style={s.campioneNome}>{nomeDi(campione)}</Text>
             </View>
           </View>
+        )}
+
+        {/* disponibilità ancora da inserire, finché il campionato non è
+            iniziato (promemoria giornaliero, fix utente esplicito) */}
+        {mioPartecipante && campionato.sport !== 'Calcio' && !['in_corso', 'concluso'].includes(campionato.stato) && (
+          <DisponibilitaIscrizione
+            attuale={mioPartecipante.disponibilita} minimo={giorniMinimi(campionato.format_config)} inizio={campionato.inizio_evento_at}
+            mia={me?.disponibilita_oraria}
+            compagno={mioPartecipante.giocatore_2_id ? giocatoriMap.get(mioPartecipante.giocatore_1_id === me?.id ? mioPartecipante.giocatore_2_id : mioPartecipante.giocatore_1_id)?.disponibilita_oraria ?? null : undefined}
+            onInvia={async (d) => { const r = await aggiornaDisponibilitaIscrizione('campionato', mioPartecipante.id, d); if (r.ok) load(); return r; }}
+          />
         )}
 
         {iscrizioniAperte && (

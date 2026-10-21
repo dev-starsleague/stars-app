@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../lib/auth';
 import {
   getEventoStandardDettaglio, getGiocatori, iscrivitiEventoStandard, rispondiPropostaCoppia, ritiratiDaEventoStandard,
+  aggiornaDisponibilitaIscrizione,
   type EventoStandard, type EventoStandardPartecipante,
 } from '../../../../lib/api';
 import { avvisa } from '../../../../lib/avviso';
@@ -22,6 +23,7 @@ import { statoIscrizioni, ETICHETTA_STATO_ISCRIZIONI } from '../../../../lib/sta
 import { contaGiorniUtili, giorniMinimi, intersezione } from '../../../../lib/disponibilita';
 import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
+import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { Card, Muted, IconButton, Button } from '../../../../components/ui';
 import { ListaPartecipantiPerCategoria, ModaleCoppia } from '../../../../components/campionatoTorneo';
 import { useTheme } from '../../../../lib/theme';
@@ -88,22 +90,17 @@ export default function CampionatoInIscrizione() {
     if (!me) return;
     const partner = partnerId ? giocatoriMap.get(partnerId) : null;
     const disponibilita = intersezione(me.disponibilita_oraria, partner?.disponibilita_oraria);
-    if (contaGiorniUtili(disponibilita) < minimo) {
-      setCoppiaAperta(false);
-      avvisa(
-        'Disponibilità insufficiente',
-        `Servono almeno ${minimo} giorni a settimana con 2 ore libere${partner ? ' in comune con il compagno' : ''}. Aggiornala dal profilo e riprova.`,
-      );
-      return;
-    }
+    // non blocca: va completata entro l'inizio (promemoria ogni giorno)
+    const mancaDisp = contaGiorniUtili(disponibilita) < minimo;
     setOperazione(true);
     const res = await iscrivitiEventoStandard(evento, me.id, partnerId, disponibilita);
     setOperazione(false);
     setCoppiaAperta(false);
     if (res.ok) {
-      avvisa('Iscrizione registrata', partnerId
+      avvisa('Iscrizione registrata', (partnerId
         ? `Sei iscritto a "${evento.nome}" con ${nome(partnerId)}.`
-        : `Sei iscritto a "${evento.nome}" da solo: il centro ti proporrà un compagno e riceverai una notifica per confermarlo.`);
+        : `Sei iscritto a "${evento.nome}" da solo: il centro ti proporrà un compagno e riceverai una notifica per confermarlo.`)
+        + (mancaDisp ? `\n\nRicordati di completare la disponibilità (${minimo} giorni a settimana) prima dell'inizio.` : ''));
       load();
     } else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
   };
@@ -158,6 +155,15 @@ export default function CampionatoInIscrizione() {
             <Button title="Accetta" loading={operazione} onPress={() => rispondi(true)} />
             <Button title="Rifiuta" variant="ghost" disabled={operazione} onPress={() => rispondi(false)} style={{ marginTop: Spacing.sm }} />
           </Card>
+        )}
+
+        {mio && (
+          <DisponibilitaIscrizione
+            attuale={mio.disponibilita} minimo={minimo} inizio={evento.inizio_at} mia={me?.disponibilita_oraria}
+            compagno={mio.giocatore_2_id ? giocatoriMap.get(mio.giocatore_1_id === me?.id ? mio.giocatore_2_id : mio.giocatore_1_id)?.disponibilita_oraria ?? null : undefined}
+            nomeCompagno={mio.giocatore_2_id ? nome(mio.giocatore_1_id === me?.id ? mio.giocatore_2_id : mio.giocatore_1_id) : undefined}
+            onInvia={async (d) => { const r = await aggiornaDisponibilitaIscrizione('standard', mio.id, d); if (r.ok) load(); return r; }}
+          />
         )}
 
         <Card style={s.card}>
