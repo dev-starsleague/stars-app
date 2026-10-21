@@ -8,6 +8,8 @@ import { useAuth } from '../../lib/auth';
 import { updateProfilo } from '../../lib/api';
 import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
+import { AvvisoDisponibilita } from '../../components/AvvisoDisponibilita';
+import { contaGiorniUtili } from '../../lib/disponibilita';
 import { Button, Card, Chip, IconButton, Input, Muted } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
 import { Spacing, Font, Radius, AppColors } from '../../constants/theme';
@@ -365,6 +367,8 @@ export default function ModificaProfilo() {
               </View>
             );
           })}
+          {/* campionati: 1 giorno = rosso, 2 = giallo (fix utente esplicito) */}
+          {Object.keys(disponibilita).length > 0 && <AvvisoDisponibilita giorni={contaGiorniUtili(disponibilita)} />}
         </Sezione>
 
         <Button title="Salva" onPress={salva} loading={saving} style={{ marginTop: Spacing.xl }} />

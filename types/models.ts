@@ -516,6 +516,8 @@ export interface Campionato {
   inizio_evento_at: string | null;
   quota_iscrizione_a_giocatore: number;
   quota_include_campo: boolean;
+  // disponibilita_minime: giorni a settimana richiesti all'iscrizione
+  format_config?: { disponibilita_minime?: number; [key: string]: unknown };
   // conteggi lato client
   iscritti_count?: number;
   iscritto?: boolean;

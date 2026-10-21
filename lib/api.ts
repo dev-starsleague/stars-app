@@ -17,7 +17,7 @@ import type {
   VariazioneRanking, AndamentoRecente, InsightsSociali, InsightAvversario, ProssimaPartita, RigaClassificaCoppia, Genere,
   NoleggioProdotto, NoleggioPrestito, RoundPartita, OpportunitaMatchmaking, PreferenzaAttesa, CoinTransazione, ProdottoPrivato,
   Campionato, Torneo, CampionatoPartecipante, TorneoPartecipante, CampionatoGirone, CampionatoGiornata, CampionatoMatch,
-  TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante, Notifica,
+  TorneoRound, TorneoMatch, RigaClassifica, VotoPartita, EventoPartecipante, Notifica, FasciaOraria,
 } from '../types/models';
 
 // "Entra in modalità demo" deve mostrare sempre dati finti, anche quando
@@ -90,6 +90,13 @@ export async function getMioProfilo(giocatoreId: string | null): Promise<Giocato
   if (!giocatoreId) return null;
   const { data } = await apiGet<any>(`/giocatori/${giocatoreId}`);
   return data ? mapGiocatore(data) : null;
+}
+
+/** Segna che il giocatore usa l'app (Giocatore.app_attiva_at lato
+ *  backend): da lì il centro sa che può chiedergli conferme in app. */
+export async function segnaAppAttiva(id: string): Promise<void> {
+  if (isMock() || eIlGiocatoreDemo(id)) return;
+  await apiPatch(`/giocatori/${id}`, { app_attiva_at: new Date().toISOString() });
 }
 
 export async function updateProfilo(id: string, patch: Partial<Giocatore>): Promise<void> {
@@ -1791,3 +1798,106 @@ function oggiISO(): string {
 }
 
 export { isMock };
+
+// ---------- Campionati in fase di iscrizione (EventoStandard round_robin) ----------
+// I campionati creati dal gestionale con la creazione guidata restano un
+// "evento standard" finché le iscrizioni sono aperte: alla chiusura il
+// centro li divide per categoria in Campionati veri (quelli di
+// getCampionati). Qui ci si iscrive in coppia o da soli (fix utente
+// esplicito: "dai la possibilità di iscrivere i giocatori singolarmente,
+// sia da gestionale che da app").
+
+export interface PropostaCoppia {
+  id: string;
+  con_partecipante_id: string;
+  compagno_id: string;
+  risposte: Record<string, 'attesa' | 'confermata'>;
+}
+export interface EventoStandard {
+  id: string;
+  centro_id: string;
+  nome: string;
+  sport: string;
+  format_type: string;
+  tipo_iscrizione: 'singolo' | 'coppia';
+  divisione: string;
+  stato: string;
+  categorie_ammesse: string[] | null;
+  apertura_iscrizioni_at: string | null;
+  chiusura_iscrizioni_at: string | null;
+  inizio_at: string | null;
+  quota_iscrizione_a_giocatore: number;
+  quota_include_campo: boolean;
+  format_config: { disponibilita_minime?: number; [key: string]: unknown };
+  iscritti_count?: number;
+}
+export interface EventoStandardPartecipante {
+  id: string;
+  evento_standard_id: string;
+  giocatore_1_id: string;
+  giocatore_2_id: string | null;
+  ranking: number;
+  stato: 'iscritto' | 'incompleta' | 'ritirato';
+  proposta_coppia: PropostaCoppia | null;
+}
+
+export async function getCampionatiInIscrizione(): Promise<EventoStandard[]> {
+  if (isMock()) return [];
+  const [{ data: ev }, { data: part }] = await Promise.all([
+    apiGet<EventoStandard[]>('/eventi-standard', { format_type: 'round_robin' }),
+    apiGet<EventoStandardPartecipante[]>('/eventi-standard-partecipanti'),
+  ]);
+  const conteggi = new Map<string, number>();
+  for (const p of part ?? []) if (p.stato === 'iscritto') conteggi.set(p.evento_standard_id, (conteggi.get(p.evento_standard_id) ?? 0) + 1);
+  return (ev ?? [])
+    .filter((e) => e.format_type === 'round_robin' && ['iscrizioni_aperte', 'iscrizioni_chiuse'].includes(e.stato))
+    .map((e) => ({ ...e, iscritti_count: conteggi.get(e.id) ?? 0 }));
+}
+
+export async function getEventoStandardDettaglio(id: string): Promise<{ evento: EventoStandard; partecipanti: EventoStandardPartecipante[] } | null> {
+  if (isMock()) return null;
+  const [{ data: evento }, { data: part }] = await Promise.all([
+    apiGet<EventoStandard>(`/eventi-standard/${id}`),
+    apiGet<EventoStandardPartecipante[]>('/eventi-standard-partecipanti', { evento_standard_id: id }),
+  ]);
+  if (!evento) return null;
+  return { evento, partecipanti: (part ?? []).filter((p) => p.stato !== 'ritirato') };
+}
+
+/** partnerId null = iscrizione da solo: il centro gli troverà un compagno. */
+export async function iscrivitiEventoStandard(
+  evento: EventoStandard, giocatoreId: string, partnerId: string | null, disponibilita: Record<string, FasciaOraria[]>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
+  const [r1, r2] = await Promise.all([
+    getRankingAttuale(giocatoreId, evento.sport),
+    partnerId ? getRankingAttuale(partnerId, evento.sport) : Promise.resolve(null),
+  ]);
+  const ranking = partnerId ? ((r1?.ranking ?? 0) + (r2?.ranking ?? 0)) / 2 : (r1?.ranking ?? 0);
+  const { error } = await apiPost('/eventi-standard-partecipanti', {
+    evento_standard_id: evento.id, giocatore_1_id: giocatoreId, giocatore_2_id: partnerId, ranking: +ranking.toFixed(2),
+    ...(evento.format_type === 'round_robin' ? { disponibilita } : {}),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function rispondiPropostaCoppia(partecipanteId: string, giocatoreId: string, accetta: boolean): Promise<{ ok: boolean; esito?: string; error?: string }> {
+  if (isMock() || eIlGiocatoreDemo(giocatoreId)) return { ok: true };
+  const { data, error } = await apiPost<any>(`/eventi-standard/partecipanti/${partecipanteId}/proposta-coppia/risposta`, { giocatore_id: giocatoreId, accetta });
+  return error ? { ok: false, error: error.message } : { ok: true, esito: data?.esito };
+}
+
+export async function ritiratiDaEventoStandard(partecipanteId: string): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await apiPatch(`/eventi-standard-partecipanti/${partecipanteId}`, { stato: 'ritirato', ritirato_da: 'giocatore' });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** id degli eventi standard a cui il giocatore è iscritto (anche da solo). */
+export async function getEventiStandardIscritti(giocatoreId: string): Promise<string[]> {
+  if (isMock()) return [];
+  const [{ data: p1 }, { data: p2 }] = await Promise.all([
+    apiGet<EventoStandardPartecipante[]>('/eventi-standard-partecipanti', { giocatore_1_id: giocatoreId }),
+    apiGet<EventoStandardPartecipante[]>('/eventi-standard-partecipanti', { giocatore_2_id: giocatoreId }),
+  ]);
+  return [...(p1 ?? []), ...(p2 ?? [])].filter((p) => p.stato !== 'ritirato').map((p) => p.evento_standard_id);
+}

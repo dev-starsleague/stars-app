@@ -12,6 +12,7 @@ import {
   getCampionati, getCampionatiIscritti, getPosizioneCampionato,
   getTornei, getTorneiIscritti, getPosizioneTorneo,
   getCentri, centriPreferiti,
+  getCampionatiInIscrizione, getEventiStandardIscritti, type EventoStandard,
 } from '../../lib/api';
 import { apiUrl } from '../../lib/apiClient';
 import { statoIscrizioni, ETICHETTA_STATO_ISCRIZIONI, type StatoIscrizioni } from '../../lib/stars';
@@ -22,7 +23,7 @@ import { Radius, Spacing, Font, AppColors } from '../../constants/theme';
 import type { EventoCustom, Campionato, Torneo, Centro } from '../../types/models';
 
 type TabE = 'attivi' | 'miei' | 'passati';
-type TipoVoce = 'evento' | 'campionato' | 'torneo';
+type TipoVoce = 'evento' | 'campionato' | 'torneo' | 'standard';
 type ModoCentro = 'tutti' | 'preferiti' | 'zona';
 type TipoFiltro = 'tutti' | 'campionato' | 'torneo';
 type FiltroZona = { tipo: 'regione' | 'provincia'; valore: string };
@@ -56,13 +57,14 @@ interface Voce {
 }
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
-const ETICHETTA_TIPO: Record<TipoVoce, string> = { evento: 'Evento', campionato: 'Campionato', torneo: 'Torneo' };
-const ICONA_TIPO: Record<TipoVoce, IoniconName> = { evento: 'trophy', campionato: 'ribbon', torneo: 'medal' };
+// 'standard' = campionato creato dal gestionale ancora in fase di iscrizione
+const ETICHETTA_TIPO: Record<TipoVoce, string> = { evento: 'Evento', campionato: 'Campionato', torneo: 'Torneo', standard: 'Campionato' };
+const ICONA_TIPO: Record<TipoVoce, IoniconName> = { evento: 'trophy', campionato: 'ribbon', torneo: 'medal', standard: 'ribbon' };
 const ETICHETTA_FORMATO_TORNEO: Record<string, string> = {
   round_robin: 'Girone all’italiana', single_elimination: 'Eliminazione diretta', americano: 'Americano', swiss: 'Svizzero',
 };
 function formatoDi(tipo: TipoVoce, formatType?: string, unitaCompetitiva?: string): string {
-  if (tipo === 'campionato') return 'Gironi + playoff';
+  if (tipo === 'campionato' || tipo === 'standard') return 'Gironi + playoff';
   if (tipo === 'torneo') return ETICHETTA_FORMATO_TORNEO[formatType ?? ''] ?? formatType ?? '—';
   return unitaCompetitiva === 'coppia_fissa' ? 'Coppia fissa' : unitaCompetitiva ?? '—';
 }
@@ -85,6 +87,7 @@ export default function Eventi() {
   const [eventi, setEventi] = useState<EventoCustom[]>([]);
   const [campionati, setCampionati] = useState<Campionato[]>([]);
   const [tornei, setTornei] = useState<Torneo[]>([]);
+  const [standard, setStandard] = useState<EventoStandard[]>([]);
   const [centri, setCentri] = useState<Centro[]>([]);
   const [iscritti, setIscritti] = useState<Record<string, boolean>>({}); // chiave `${tipo}:${id}`
   const [posizioni, setPosizioni] = useState<Record<string, number>>({}); // chiave `${tipo}:${id}`, solo per i miei eventi in corso
@@ -98,13 +101,14 @@ export default function Eventi() {
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('tutti');
 
   const load = useCallback(async () => {
-    const [ev, camp, torn, cen] = await Promise.all([getEventi(), getCampionati(), getTornei(), getCentri()]);
-    setEventi(ev); setCampionati(camp); setTornei(torn); setCentri(cen);
+    const [ev, camp, torn, cen, std] = await Promise.all([getEventi(), getCampionati(), getTornei(), getCentri(), getCampionatiInIscrizione()]);
+    setEventi(ev); setCampionati(camp); setTornei(torn); setCentri(cen); setStandard(std);
     if (me) {
-      const [evIscr, campIscr, tornIscr] = await Promise.all([
-        getEventiIscritti(me.id), getCampionatiIscritti(me.id), getTorneiIscritti(me.id),
+      const [evIscr, campIscr, tornIscr, stdIscr] = await Promise.all([
+        getEventiIscritti(me.id), getCampionatiIscritti(me.id), getTorneiIscritti(me.id), getEventiStandardIscritti(me.id),
       ]);
       const mappa: Record<string, boolean> = {};
+      for (const id of stdIscr) mappa[`standard:${id}`] = true;
       for (const e of evIscr) mappa[`evento:${e.id}`] = true;
       for (const c of campIscr) mappa[`campionato:${c.id}`] = true;
       for (const t of tornIscr) mappa[`torneo:${t.id}`] = true;
@@ -151,7 +155,15 @@ export default function Eventi() {
       iscrittiCount: t.iscritti_count ?? 0, maxPartecipanti: t.format_config?.max_iscritti ?? null,
       quota: t.quota_iscrizione_a_giocatore,
     })),
-  ], [eventi, campionati, tornei]);
+    ...standard.map((e): Voce => ({
+      tipo: 'standard', id: e.id, centroId: e.centro_id, nome: e.nome, sport: e.sport,
+      divisione: e.divisione === 'maschile' || e.divisione === 'femminile' ? e.divisione : 'misto',
+      aperturaIscrizioni: e.apertura_iscrizioni_at, chiusuraIscrizioni: e.chiusura_iscrizioni_at,
+      dataInizio: e.inizio_at, formato: formatoDi('standard'),
+      statoBackend: e.stato, bozza: false, concluso: false, iscrittiCount: e.iscritti_count ?? 0,
+      quota: e.quota_iscrizione_a_giocatore,
+    })),
+  ], [eventi, campionati, tornei, standard]);
 
   const preferiti = useMemo(() => centriPreferiti(me), [me]);
   const centroDiVoce = useCallback((v: Voce) => centri.find((c) => c.id === v.centroId), [centri]);
@@ -165,7 +177,7 @@ export default function Eventi() {
     }
     return true;
   }, [modoCentro, zonaApplicata, preferiti, centroDiVoce]);
-  const passaFiltroTipo = (v: Voce) => tipoFiltro === 'tutti' ? true : v.tipo === tipoFiltro;
+  const passaFiltroTipo = (v: Voce) => tipoFiltro === 'tutti' ? true : v.tipo === tipoFiltro || (tipoFiltro === 'campionato' && v.tipo === 'standard');
 
   const eIscritto = (v: Voce) => !!iscritti[`${v.tipo}:${v.id}`];
   const statoDi = (v: Voce) => statoIscrizioni(v.aperturaIscrizioni, v.chiusuraIscrizioni, v.iscrittiCount, v.maxPartecipanti);

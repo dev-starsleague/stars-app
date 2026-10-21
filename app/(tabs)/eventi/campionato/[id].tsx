@@ -8,6 +8,8 @@ import { useAuth } from '../../../../lib/auth';
 import { getCampionatoDettaglio, getClassificaGirone, getGiocatori, iscrivitiCampionato, pagaQuotaIscrizione, type DettaglioCampionato } from '../../../../lib/api';
 import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
+import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
+import { contaGiorniUtili, giorniMinimi } from '../../../../lib/disponibilita';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
 import {
   TabellaClassifica, Tabellone, RigaMatch, mappaNomiPartecipanti, etichettaTurno,
@@ -176,10 +178,20 @@ export default function CampionatoDettaglio() {
                 )}
               </View>
             ) : (
-              <Button
-                title={iscrivendo ? 'Iscrizione…' : campionato.tipo_iscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'}
-                loading={iscrivendo} onPress={avviaIscrizione}
-              />
+              <View>
+                {/* disponibilità del profilo: il campionato chiede N giorni a
+                    settimana (scelti dal centro); con 1 o 2 giorni avviso
+                    rosso/giallo (fix utente esplicito) */}
+                <Muted style={{ marginBottom: Spacing.xs }}>
+                  Disponibilità richiesta: almeno {giorniMinimi(campionato.format_config)} giorni a settimana con 2 ore libere. Tu ne hai {contaGiorniUtili(me?.disponibilita_oraria)}.
+                </Muted>
+                <AvvisoDisponibilita giorni={contaGiorniUtili(me?.disponibilita_oraria)} />
+                <Button
+                  title={iscrivendo ? 'Iscrizione…' : campionato.tipo_iscrizione === 'coppia' ? 'Iscriviti in coppia' : 'Iscriviti'}
+                  loading={iscrivendo} onPress={avviaIscrizione} style={{ marginTop: Spacing.md }}
+                />
+                <Button title="Modifica disponibilità" variant="ghost" onPress={() => router.push('/modifica-profilo')} style={{ marginTop: Spacing.sm }} />
+              </View>
             )}
           </Card>
         )}

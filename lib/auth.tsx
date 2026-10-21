@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { apiGet, apiPost, isApiConfigured } from './apiClient';
-import { getMioProfilo, isMock, setDemoDataMode } from './api';
+import { getMioProfilo, isMock, segnaAppAttiva, setDemoDataMode } from './api';
 import type { Giocatore } from '../types/models';
 import { mockMe } from './mockData';
 
@@ -66,6 +66,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const caricaProfilo = async (giocatoreId: string) => {
     const g = await getMioProfilo(giocatoreId);
     setMe(g);
+    // segnala al gestionale che questo giocatore usa l'app: le richieste
+    // che lo riguardano (es. conferma di una coppia) gli arrivano qui
+    if (g) segnaAppAttiva(giocatoreId);
   };
 
   const refreshMe = async () => {
