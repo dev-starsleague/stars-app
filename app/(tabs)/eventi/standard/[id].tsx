@@ -23,6 +23,7 @@ import { statoIscrizioni, ETICHETTA_STATO_ISCRIZIONI } from '../../../../lib/sta
 import { contaGiorniUtili, giorniMinimi, intersezione } from '../../../../lib/disponibilita';
 import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
+import { RiepilogoCampionato } from '../../../../components/RiepilogoCampionato';
 import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { Card, Muted, IconButton, Button } from '../../../../components/ui';
 import { ListaPartecipantiPerCategoria, ModaleCoppia } from '../../../../components/campionatoTorneo';
@@ -222,6 +223,15 @@ export default function CampionatoInIscrizione() {
             </View>
           )}
         </Card>
+
+        {evento.format_type === 'round_robin' && (
+          <>
+            <Text style={s.sezioneTitolo}>Come funziona</Text>
+            <Card style={s.card}>
+              <RiepilogoCampionato formatConfig={evento.format_config} premio={evento.premio} inizio={evento.inizio_at} />
+            </Card>
+          </>
+        )}
 
         <Text style={s.sezioneTitolo}>{coppia ? 'Coppie' : 'Iscritti'} ({iscritti.length})</Text>
         <Card style={s.card}>

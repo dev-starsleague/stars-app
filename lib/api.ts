@@ -1829,6 +1829,7 @@ export interface EventoStandard {
   quota_iscrizione_a_giocatore: number;
   quota_include_campo: boolean;
   format_config: { disponibilita_minime?: number; [key: string]: unknown };
+  premio?: unknown;
   iscritti_count?: number;
 }
 export interface EventoStandardPartecipante {

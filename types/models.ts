@@ -518,6 +518,8 @@ export interface Campionato {
   quota_include_campo: boolean;
   // disponibilita_minime: giorni a settimana richiesti all'iscrizione
   format_config?: { disponibilita_minime?: number; [key: string]: unknown };
+  // premi per posizione [{posizione, premi: [{tipo, coin_quantita?, descrizione?}]}]
+  premio?: unknown;
   // conteggi lato client
   iscritti_count?: number;
   iscritto?: boolean;
@@ -558,6 +560,8 @@ export interface Torneo {
   // backend/app/services/torneo.py:am_config_schema) — usato per
   // derivare il "sold out" lato app.
   format_config?: { max_iscritti?: number | null; [key: string]: unknown };
+  // premi per posizione [{posizione, premi: [{tipo, coin_quantita?, descrizione?}]}]
+  premio?: unknown;
   // conteggi lato client
   iscritti_count?: number;
   iscritto?: boolean;
@@ -597,7 +601,7 @@ export interface CampionatoGirone {
 export interface CampionatoGiornata {
   id: string;
   campionato_id: string;
-  fase: 'gironi' | 'playoff';
+  fase: 'gironi' | 'playoff' | 'fallen';
   numero: number;
   stato: string;
   aperta: boolean;

@@ -10,6 +10,7 @@ import { avvisa } from '../../../../lib/avviso';
 import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
 import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
+import { RiepilogoCampionato } from '../../../../components/RiepilogoCampionato';
 import { contaGiorniUtili, giorniMinimi } from '../../../../lib/disponibilita';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
 import {
@@ -106,6 +107,25 @@ export default function CampionatoDettaglio() {
     }));
   }, [dettaglio, giornatePlayoff, nomeDi]);
 
+  // Fallen Stars: tabellone di consolazione della metà inferiore
+  // (giornate fase "fallen"), stesso disegno dei playoff.
+  const giornateFallen = useMemo(() => sortByNumero<CampionatoGiornata>(dettaglio?.giornate.filter((g) => g.fase === 'fallen') ?? []), [dettaglio]);
+  const colonneFallen: ColonnaTabellone[] = useMemo(() => {
+    if (!dettaglio) return [];
+    return giornateFallen.map((g) => ({
+      titolo: etichettaTurno(g.numero, giornateFallen.length),
+      match: dettaglio.match.filter((m) => m.giornata_id === g.id),
+      nomeA: nomeDi, nomeB: nomeDi,
+    }));
+  }, [dettaglio, giornateFallen, nomeDi]);
+  const vincitoreFallenId = useMemo(() => {
+    if (giornateFallen.length === 0 || !dettaglio) return null;
+    const finale = giornateFallen[giornateFallen.length - 1];
+    const m = dettaglio.match.find((x) => x.giornata_id === finale.id && !x.bye);
+    return m && (m.stato === 'giocato' || m.stato === 'forfait') ? m.vincitore_id : null;
+  }, [giornateFallen, dettaglio]);
+  const risingMeta = !!(dettaglio?.campionato.format_config as any)?.playoff?.meta;
+
   const campioneId = useMemo(() => {
     if (giornatePlayoff.length === 0 || !dettaglio) return null;
     const finale = giornatePlayoff[giornatePlayoff.length - 1];
@@ -160,6 +180,15 @@ export default function CampionatoDettaglio() {
             </View>
           </View>
         )}
+        {vincitoreFallenId && (
+          <View style={[s.campioneCard, s.fallenCard]}>
+            <Ionicons name="medal" size={24} color={colors.goldSoft} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.campioneLabel}>Vincitore Fallen Stars</Text>
+              <Text style={s.campioneNome}>{nomeDi(vincitoreFallenId)}</Text>
+            </View>
+          </View>
+        )}
 
         {/* disponibilità ancora da inserire, finché il campionato non è
             iniziato (promemoria giornaliero, fix utente esplicito) */}
@@ -208,6 +237,11 @@ export default function CampionatoDettaglio() {
           </Card>
         )}
 
+        <Text style={s.sezioneTitolo}>Come funziona</Text>
+        <Card style={s.card}>
+          <RiepilogoCampionato formatConfig={campionato.format_config} premio={campionato.premio} inizio={campionato.inizio_evento_at} />
+        </Card>
+
         {/* 1. Classifica + Tabellone (fix utente esplicito, Eventi "In
             corso": "prima cosa la classifica dove prevista e il tabellone
             dove previsto") */}
@@ -226,9 +260,17 @@ export default function CampionatoDettaglio() {
 
         {colonnePlayoff.length > 0 && (
           <>
-            <Text style={s.sezioneTitolo}>Playoff</Text>
+            <Text style={s.sezioneTitolo}>{risingMeta ? 'Rising Stars' : 'Playoff'}</Text>
             <Card style={s.card}>
               <Tabellone colonne={colonnePlayoff} onMatchPress={setVotoMatch} />
+            </Card>
+          </>
+        )}
+        {colonneFallen.length > 0 && (
+          <>
+            <Text style={s.sezioneTitolo}>Fallen Stars</Text>
+            <Card style={s.card}>
+              <Tabellone colonne={colonneFallen} onMatchPress={setVotoMatch} />
             </Card>
           </>
         )}
@@ -302,6 +344,7 @@ function makeStyles(colors: AppColors) {
     },
     campioneLabel: { color: 'rgba(255,255,255,0.6)', fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase' },
     campioneNome: { color: '#fff', fontSize: Font.h3, fontWeight: '800' },
+    fallenCard: { borderColor: 'rgba(255,201,77,0.25)' },
     iscritto: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: Spacing.sm },
     iscrittoText: { color: colors.green, fontWeight: '700' },
   });
