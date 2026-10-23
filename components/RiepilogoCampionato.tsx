@@ -33,7 +33,13 @@ function descriviModalitaPremi(config: any, premioBase: PremioSalvato[] | null |
     return `Crescono con il livello della categoria.\n${righe.join('\n')}`;
   }
   if (config.modalita === 'budget') {
-    return `Montepremi di €${config.budget_euro} diviso tra le categorie ${config.distribuzione === 'manuale' ? 'secondo le quote decise dal centro' : 'in base agli iscritti'}, in Stars Coin: ${(config.ripartizione ?? []).map((v: number, i: number) => `${etichettaPos(i + 1)} ${v}%`).join(', ')}. Più iscritti, premi più ricchi.`;
+    const posizioni = config.posizioni?.length
+      ? config.posizioni.filter((p: any) => p.attiva).map((p: any) => `${etichettaPos(p.posizione)} ${p.percentuale}%`)
+      : (config.ripartizione ?? []).map((v: number, i: number) => `${etichettaPos(i + 1)} ${v}%`);
+    const come = config.distribuzione === 'progressivo'
+      ? 'più ricco per le categorie più alte'
+      : config.distribuzione === 'manuale' ? 'diviso secondo le quote decise dal centro' : 'diviso in base agli iscritti di ogni categoria: più iscritti, premi più ricchi';
+    return `Montepremi di €${config.budget_euro} in Stars Coin, ${come}. In ogni categoria: ${posizioni.join(', ')}.`;
   }
   const base = descriviPremi(premioBase);
   const bonus = (config.soglie ?? []).map((sg: any) => `da ${sg.iscritti_minimi} squadre: + ${descriviPremi(sg.bonus) ?? '—'}`);
