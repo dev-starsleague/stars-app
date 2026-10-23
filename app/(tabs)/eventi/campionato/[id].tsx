@@ -11,6 +11,7 @@ import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
 import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { RiepilogoCampionato } from '../../../../components/RiepilogoCampionato';
+import { WelcomeKitCard } from '../../../../components/WelcomeKitCard';
 import { contaGiorniUtili, giorniMinimi } from '../../../../lib/disponibilita';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
 import {
@@ -159,6 +160,7 @@ export default function CampionatoDettaglio() {
   // tabellone/giornate, niente è ancora cominciato. Chiuse o in corso: la
   // vista "In corso" (classifica+tabellone, poi giornate).
   const iscrizioniAperte = campionato.stato === 'iscrizioni_aperte';
+  const calendarioPubblicato = ['in_corso', 'concluso'].includes(campionato.stato);
   const righePartecipanti = dettaglio.partecipanti.map((p) => ({ id: p.id, nome: nomeDi(p.id), ranking: p.ranking, mio: p.id === mioPartecipanteId }));
 
   return (
@@ -242,6 +244,8 @@ export default function CampionatoDettaglio() {
           <RiepilogoCampionato formatConfig={campionato.format_config} premio={campionato.premio} inizio={campionato.inizio_evento_at} />
         </Card>
 
+        <WelcomeKitCard tipo="campionato" id={campionato.id} giocatoreId={me?.id} iscritto={!!mioPartecipante} />
+
         {/* 1. Classifica + Tabellone (fix utente esplicito, Eventi "In
             corso": "prima cosa la classifica dove prevista e il tabellone
             dove previsto") */}
@@ -277,8 +281,11 @@ export default function CampionatoDettaglio() {
 
         {/* 2. Giornate */}
         <Text style={s.sezioneTitolo}>Giornate</Text>
-        {giornateGironi.length === 0 ? (
-          <Card style={s.card}><Muted style={{ textAlign: 'center' }}>Calendario non ancora generato.</Muted></Card>
+        {/* il centro verifica il calendario prima di pubblicarlo: i
+            giocatori lo vedono solo a campionato avviato (fix utente
+            esplicito) */}
+        {!calendarioPubblicato || giornateGironi.length === 0 ? (
+          <Card style={s.card}><Muted style={{ textAlign: 'center' }}>Il calendario verrà generato automaticamente in base alle disponibilità dei giocatori. Lo vedrai qui quando il centro lo pubblica.</Muted></Card>
         ) : giornateGironi.map((g) => {
           const match = dettaglio.match.filter((m) => m.giornata_id === g.id);
           if (match.length === 0) return null;

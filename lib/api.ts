@@ -1915,3 +1915,29 @@ export async function aggiornaDisponibilitaIscrizione(
   const { error } = await apiPatch(`${base}/${partecipanteId}`, { disponibilita });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
+
+// ============================================================
+// Welcome Kit del campionato (fix utente esplicito): vantaggi degli
+// sponsor per gli iscritti. Le regole anti-abuso (solo iscritti,
+// scadenza, utilizzi massimi) le controlla il backend,
+// stars-system/backend/app/routers/welcome_kit.py.
+// ============================================================
+export type UtilizzoVantaggio = { id: string; usato_at: string; codice: string; registrato_da: string };
+export type VantaggioKit = {
+  id: string; nome: string; descrizione: string | null; sponsor_nome: string | null; sponsor_logo_url: string | null;
+  scadenza: string | null; modalita_utilizzo: string | null; utilizzi_per_giocatore: number;
+  scaduto: boolean; usati?: number; ultimo_utilizzo?: UtilizzoVantaggio | null;
+};
+
+export async function getWelcomeKit(tipo: 'standard' | 'campionato', id: string, giocatoreId?: string | null): Promise<VantaggioKit[]> {
+  if (isMock()) return [];
+  const path = tipo === 'standard' ? `/welcome-kit/evento-standard/${id}` : `/welcome-kit/campionato/${id}`;
+  const { data } = await apiGet<VantaggioKit[]>(path, giocatoreId ? { giocatore_id: giocatoreId } : undefined);
+  return data ?? [];
+}
+
+export async function usaVantaggio(vantaggioId: string, giocatoreId: string): Promise<{ ok: boolean; utilizzo?: UtilizzoVantaggio; error?: string }> {
+  if (isMock()) return { ok: false, error: 'Non disponibile in modalità demo.' };
+  const { data, error } = await apiPost<UtilizzoVantaggio>(`/welcome-kit/${vantaggioId}/usa`, { giocatore_id: giocatoreId });
+  return error ? { ok: false, error: error.message } : { ok: true, utilizzo: data ?? undefined };
+}

@@ -24,6 +24,7 @@ import { contaGiorniUtili, giorniMinimi, intersezione } from '../../../../lib/di
 import { AppHeader } from '../../../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita';
 import { RiepilogoCampionato } from '../../../../components/RiepilogoCampionato';
+import { WelcomeKitCard } from '../../../../components/WelcomeKitCard';
 import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { Card, Muted, IconButton, Button } from '../../../../components/ui';
 import { ListaPartecipantiPerCategoria, ModaleCoppia } from '../../../../components/campionatoTorneo';
@@ -231,6 +232,10 @@ export default function CampionatoInIscrizione() {
               <RiepilogoCampionato formatConfig={evento.format_config} premio={evento.premio} inizio={evento.inizio_at} />
             </Card>
           </>
+        )}
+
+        {evento.format_type === 'round_robin' && (
+          <WelcomeKitCard tipo="standard" id={evento.id} giocatoreId={me?.id} iscritto={!!mio} />
         )}
 
         <Text style={s.sezioneTitolo}>{coppia ? 'Coppie' : 'Iscritti'} ({iscritti.length})</Text>
