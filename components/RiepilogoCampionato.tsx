@@ -39,7 +39,8 @@ function descriviModalitaPremi(config: any, premioBase: PremioSalvato[] | null |
     const come = config.distribuzione === 'progressivo'
       ? 'più ricco per le categorie più alte'
       : config.distribuzione === 'manuale' ? 'diviso secondo le quote decise dal centro' : 'diviso in base agli iscritti di ogni categoria: più iscritti, premi più ricchi';
-    return `Montepremi di €${config.budget_euro} in Stars Coin, ${come}. In ogni categoria: ${posizioni.join(', ')}.`;
+    const forma = config.tipo_premio === 'prodotti' ? 'in prodotti dello shop' : 'in Stars Coin';
+    return `Montepremi indicativo di €${config.budget_euro} ${forma}, ${come}. In ogni categoria: ${posizioni.join(', ')}.`;
   }
   const base = descriviPremi(premioBase);
   const bonus = (config.soglie ?? []).map((sg: any) => `da ${sg.iscritti_minimi} squadre: + ${descriviPremi(sg.bonus) ?? '—'}`);
@@ -78,17 +79,17 @@ export function RiepilogoCampionato({ formatConfig, premio, inizio }: {
   }
   if (rising) {
     righe.push({
-      icona: 'trending-up-outline', titolo: 'Rising Stars',
+      icona: 'trending-up-outline', titolo: 'Playoff Rising Stars',
       testo: fc.playoff?.meta ? 'La metà superiore di ogni girone gioca i playoff per il titolo.' : `Le prime ${fc.playoff?.qualificate_per_girone ?? 2} di ogni girone giocano i playoff.`,
     });
   }
   if (fallen) {
-    righe.push({ icona: 'trending-down-outline', titolo: 'Fallen Stars', testo: 'La metà inferiore gioca un torneo di consolazione.' });
+    righe.push({ icona: 'trending-down-outline', titolo: 'Playoff Fallen Stars', testo: 'La metà inferiore gioca un torneo di consolazione.' });
   }
   const premiPrincipali = descriviModalitaPremi(fc.premi_config, premio as PremioSalvato[] | null) ?? descriviPremi(premio as PremioSalvato[] | null);
-  if (premiPrincipali) righe.push({ icona: 'trophy-outline', titolo: rising && fc.playoff?.meta ? 'Premi Rising Stars' : 'Premi', testo: premiPrincipali });
-  const premiFallen = fallen ? descriviPremi(fc.fallen_stars?.premio) : null;
-  if (premiFallen) righe.push({ icona: 'medal-outline', titolo: 'Premi Fallen Stars', testo: premiFallen });
+  if (premiPrincipali) righe.push({ icona: 'trophy-outline', titolo: rising && fc.playoff?.meta ? 'Premi Playoff Rising Stars' : 'Premi', testo: premiPrincipali });
+  const premiFallen = fallen ? (descriviModalitaPremi(fc.fallen_stars?.premi_config, null) ?? descriviPremi(fc.fallen_stars?.premio)) : null;
+  if (premiFallen) righe.push({ icona: 'medal-outline', titolo: 'Premi Playoff Fallen Stars', testo: premiFallen });
 
   return (
     <View style={{ gap: Spacing.sm }}>

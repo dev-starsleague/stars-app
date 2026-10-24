@@ -186,7 +186,7 @@ export default function CampionatoDettaglio() {
           <View style={[s.campioneCard, s.fallenCard]}>
             <Ionicons name="medal" size={24} color={colors.goldSoft} />
             <View style={{ flex: 1 }}>
-              <Text style={s.campioneLabel}>Vincitore Fallen Stars</Text>
+              <Text style={s.campioneLabel}>Vincitore Playoff Fallen Stars</Text>
               <Text style={s.campioneNome}>{nomeDi(vincitoreFallenId)}</Text>
             </View>
           </View>
@@ -264,7 +264,7 @@ export default function CampionatoDettaglio() {
 
         {colonnePlayoff.length > 0 && (
           <>
-            <Text style={s.sezioneTitolo}>{risingMeta ? 'Rising Stars' : 'Playoff'}</Text>
+            <Text style={s.sezioneTitolo}>{risingMeta ? 'Playoff Rising Stars' : 'Playoff'}</Text>
             <Card style={s.card}>
               <Tabellone colonne={colonnePlayoff} onMatchPress={setVotoMatch} />
             </Card>
@@ -272,7 +272,7 @@ export default function CampionatoDettaglio() {
         )}
         {colonneFallen.length > 0 && (
           <>
-            <Text style={s.sezioneTitolo}>Fallen Stars</Text>
+            <Text style={s.sezioneTitolo}>Playoff Fallen Stars</Text>
             <Card style={s.card}>
               <Tabellone colonne={colonneFallen} onMatchPress={setVotoMatch} />
             </Card>
