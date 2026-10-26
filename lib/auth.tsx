@@ -48,7 +48,8 @@ interface AuthState {
   loading: boolean;
   demoMode: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string, nome: string, cognome: string) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string, nome: string, cognome: string,
+           extra?: { data_nascita?: string; privacy?: { versione: string; letta_il: string; marketing: boolean } }) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   enterDemo: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -100,12 +101,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   };
 
-  const signUp = async (email: string, _password: string, nome: string, cognome: string) => {
+  const signUp = async (email: string, _password: string, nome: string, cognome: string,
+                        extra: { data_nascita?: string; privacy?: { versione: string; letta_il: string; marketing: boolean } } = {}) => {
     const { data: esistenti, error: errRicerca } = await apiGet<any[]>('/giocatori', { email });
     if (errRicerca) return { error: errRicerca.message };
     if (esistenti && esistenti.length > 0) return { error: 'Email già registrata: prova ad accedere.' };
 
-    const { data: nuovo, error } = await apiPost<any>('/giocatori', { nome, cognome, email });
+    const { data: nuovo, error } = await apiPost<any>('/giocatori', {
+      nome, cognome, email,
+      ...(extra.data_nascita ? { data_nascita: extra.data_nascita } : {}),
+      // presa visione dell'informativa e consenso marketing (prova)
+      ...(extra.privacy ? { profilo: { privacy: extra.privacy } } : {}),
+    });
     if (error) return { error: error.message };
     setDemoDataMode(false);
     setDemoMode(false);
