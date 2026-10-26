@@ -65,6 +65,13 @@ export default function CampionatoInIscrizione() {
     () => partecipanti.find((p) => p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id) ?? null,
     [partecipanti, me]
   );
+  // secondo campionato (fix utente esplicito): al massimo 2, in categorie
+  // diverse o nella stessa ma in un'altra divisione — le regole le
+  // controlla il centro (backend), qui si offre la possibilità
+  const mieIscrizioni = useMemo(
+    () => partecipanti.filter((p) => (p.giocatore_1_id === me?.id || p.giocatore_2_id === me?.id) && p.stato !== 'ritirato'),
+    [partecipanti, me]
+  );
 
   if (caricando || !evento) {
     return (
@@ -104,7 +111,7 @@ export default function CampionatoInIscrizione() {
         : `Sei iscritto a "${evento.nome}" da solo: il centro ti proporrà un compagno e riceverai una notifica per confermarlo.`)
         + (mancaDisp ? `\n\nRicordati di completare la disponibilità (${minimo} giorni a settimana) prima dell'inizio.` : ''));
       load();
-    } else avvisa('Errore', res.error ?? 'Iscrizione non riuscita.');
+    } else avvisa('Iscrizione non possibile', res.error ?? 'Iscrizione non riuscita.');
   };
 
   const rispondi = async (accetta: boolean) => {
@@ -186,9 +193,21 @@ export default function CampionatoInIscrizione() {
 
           {mio ? (
             mio.stato === 'iscritto' ? (
-              <View style={s.iscritto}>
-                <Ionicons name="checkmark-circle" size={18} color={colors.green} />
-                <Text style={s.iscrittoText}>{mio.giocatore_2_id ? `Sei iscritto con ${nome(mio.giocatore_1_id === me?.id ? mio.giocatore_2_id : mio.giocatore_1_id)}` : 'Sei iscritto'}</Text>
+              <View>
+                {mieIscrizioni.filter((p) => p.stato === 'iscritto').map((p) => (
+                  <View key={p.id} style={s.iscritto}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+                    <Text style={s.iscrittoText}>{p.giocatore_2_id ? `Sei iscritto con ${nome(p.giocatore_1_id === me?.id ? p.giocatore_2_id : p.giocatore_1_id)}` : 'Sei iscritto'}</Text>
+                  </View>
+                ))}
+                {evento.format_type === 'round_robin' && coppia && stato === 'aperte' && mieIscrizioni.length < 2 && (
+                  <View style={{ marginTop: Spacing.sm }}>
+                    <Button title="Gioca anche un'altra categoria" variant="ghost" disabled={operazione} onPress={() => setCoppiaAperta(true)} />
+                    <Muted style={{ marginTop: Spacing.xs, textAlign: 'center' }}>
+                      Con un altro compagno puoi fare un secondo campionato: al massimo 2, in un'altra categoria o nella stessa ma in un'altra divisione (es. 2 stelle maschile e 2 stelle misto). Giocherai 2 partite a settimana: tieni aggiornata la disponibilità.
+                    </Muted>
+                  </View>
+                )}
               </View>
             ) : (
               <View>
