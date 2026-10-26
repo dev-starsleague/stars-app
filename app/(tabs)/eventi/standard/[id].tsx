@@ -208,7 +208,7 @@ export default function CampionatoInIscrizione() {
           ) : stato === 'aperte' && (
             <View>
               <Muted style={{ marginBottom: Spacing.xs }}>
-                Disponibilità richiesta: almeno {minimo} giorni a settimana con 2 ore libere. Tu ne hai {mieiGiorni}.
+                Disponibilità richiesta: almeno {minimo} giorni a settimana con almeno un orario di inizio partita. Tu ne hai {mieiGiorni}.
               </Muted>
               <AvvisoDisponibilita giorni={mieiGiorni} />
               {coppia ? (

@@ -226,7 +226,7 @@ export default function CampionatoDettaglio() {
                     settimana (scelti dal centro); con 1 o 2 giorni avviso
                     rosso/giallo (fix utente esplicito) */}
                 <Muted style={{ marginBottom: Spacing.xs }}>
-                  Disponibilità richiesta: almeno {giorniMinimi(campionato.format_config)} giorni a settimana con 2 ore libere. Tu ne hai {contaGiorniUtili(me?.disponibilita_oraria)}.
+                  Disponibilità richiesta: almeno {giorniMinimi(campionato.format_config)} giorni a settimana con almeno un orario di inizio partita. Tu ne hai {contaGiorniUtili(me?.disponibilita_oraria)}.
                 </Muted>
                 <AvvisoDisponibilita giorni={contaGiorniUtili(me?.disponibilita_oraria)} />
                 <Button

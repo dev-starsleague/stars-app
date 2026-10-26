@@ -1,19 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../../lib/auth';
-import { updateProfilo } from '../../lib/api';
+import { getCentro, updateProfilo } from '../../lib/api';
 import { avvisa } from '../../lib/avviso';
 import { AppHeader } from '../../components/AppHeader';
 import { AvvisoDisponibilita } from '../../components/AvvisoDisponibilita';
-import { contaGiorniUtili } from '../../lib/disponibilita';
+import { contaGiorniUtili, iniziPossibili } from '../../lib/disponibilita';
+import { SelettoreOrario } from '../../components/SelettoreOrario';
 import { Button, Card, Chip, IconButton, Input, Muted } from '../../components/ui';
 import { useTheme } from '../../lib/theme';
 import { Spacing, Font, Radius, AppColors } from '../../constants/theme';
-import type { FasciaOraria, Genere, ManoDominante, Posizione } from '../../types/models';
+import type { FasciaOraria, Genere, ManoDominante, OrariCentro, Posizione } from '../../types/models';
 
 // Stessi campi del form "Modifica giocatore" del gestionale
 // (src/routes/giocatori/+page.svelte), riorganizzati nelle 4 sezioni chieste:
@@ -209,14 +210,24 @@ export default function ModificaProfilo() {
     setCalendarioAperto(false);
   };
 
+  // orari d'inizio ogni 30', dentro l'apertura del club (fix utente esplicito)
+  const [orariClub, setOrariClub] = useState<OrariCentro | null>(null);
+  useEffect(() => { getCentro().then((c) => setOrariClub(c?.orari ?? null)).catch(() => {}); }, []);
+  const opzioniGiorno = (giorno: string) => iniziPossibili(orariClub, giorno);
+  const fasciaNuova = (giorno: string): FasciaOraria => {
+    const o = opzioniGiorno(giorno);
+    if (!o.length) return { da: '18:00', a: '20:00' };
+    const vicino = (h: string) => (o.includes(h) ? h : h < o[0] ? o[0] : o[o.length - 1]);
+    return { da: vicino('18:00'), a: vicino('20:00') };
+  };
   const toggleGiorno = (giorno: string) => {
     setDisponibilita((prev) => {
       if (prev[giorno]) { const { [giorno]: _rimosso, ...resto } = prev; return resto; }
-      return { ...prev, [giorno]: [{ da: '18:00', a: '20:00' }] };
+      return { ...prev, [giorno]: [fasciaNuova(giorno)] };
     });
   };
   const aggiungiFascia = (giorno: string) => {
-    setDisponibilita((prev) => ({ ...prev, [giorno]: [...(prev[giorno] ?? []), { da: '18:00', a: '20:00' }] }));
+    setDisponibilita((prev) => ({ ...prev, [giorno]: [...(prev[giorno] ?? []), fasciaNuova(giorno)] }));
   };
   const rimuoviFascia = (giorno: string, idx: number) => {
     setDisponibilita((prev) => {
@@ -229,7 +240,11 @@ export default function ModificaProfilo() {
   const modificaFascia = (giorno: string, idx: number, campo: 'da' | 'a', valore: string) => {
     setDisponibilita((prev) => {
       const attuali = [...(prev[giorno] ?? [])];
-      attuali[idx] = { ...attuali[idx], [campo]: valore };
+      const f = { ...attuali[idx], [campo]: valore };
+      // l'orario massimo non può essere prima del minimo
+      if (campo === 'da' && f.a < valore) f.a = valore;
+      if (campo === 'a' && f.da > valore) f.da = valore;
+      attuali[idx] = f;
       return { ...prev, [giorno]: attuali };
     });
   };
@@ -337,7 +352,7 @@ export default function ModificaProfilo() {
           aperta={sezioniAperte.disponibilita}
           onToggle={() => toggleSezione('disponibilita')}
         >
-          <Muted style={{ marginBottom: Spacing.sm }}>Seleziona i giorni e aggiungi le fasce che preferisci.</Muted>
+          <Muted style={{ marginBottom: Spacing.sm }}>Per ogni giorno indica l'orario minimo e l'orario massimo di inizio partita: la partita può iniziare in qualunque mezz'ora compresa (18:00–20:00 = inizio alle 18:00, 18:30, 19:00, 19:30 o 20:00).</Muted>
           {GIORNI.map((gi) => {
             const attivo = Boolean(disponibilita[gi]);
             return (
@@ -350,9 +365,10 @@ export default function ModificaProfilo() {
                   <View style={s.fasceBox}>
                     {(disponibilita[gi] ?? []).map((f, idx) => (
                       <View key={idx} style={s.fasciaRiga}>
-                        <Input style={s.orario} value={f.da} onChangeText={(v) => modificaFascia(gi, idx, 'da', v)} placeholder="18:00" />
-                        <Text style={s.fasciaSep}>–</Text>
-                        <Input style={s.orario} value={f.a} onChangeText={(v) => modificaFascia(gi, idx, 'a', v)} placeholder="20:00" />
+                        <Text style={s.fasciaSep}>inizio dalle</Text>
+                        <SelettoreOrario valore={f.da} opzioni={opzioniGiorno(gi)} onCambia={(v) => modificaFascia(gi, idx, 'da', v)} etichetta={`${gi}: orario minimo di inizio`} />
+                        <Text style={s.fasciaSep}>alle</Text>
+                        <SelettoreOrario valore={f.a} opzioni={opzioniGiorno(gi)} onCambia={(v) => modificaFascia(gi, idx, 'a', v)} etichetta={`${gi}: orario massimo di inizio`} />
                         <Pressable onPress={() => rimuoviFascia(gi, idx)} style={s.fasciaRimuovi}>
                           <Ionicons name="close" size={16} color={colors.red} />
                         </Pressable>

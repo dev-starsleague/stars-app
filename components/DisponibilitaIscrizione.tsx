@@ -45,7 +45,7 @@ export function DisponibilitaIscrizione({ attuale, minimo, inizio, mia, compagno
         <Text style={[s.titolo, { color: colors.navyDeep }]}>Manca la tua disponibilità</Text>
       </View>
       <Muted style={{ marginBottom: Spacing.sm }}>
-        Servono almeno {minimo} giorni a settimana con 2 ore libere{inizio ? `, entro il ${new Date(inizio).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}` : ' prima dell\'inizio'}. Per ora ne risultano {giorniAttuali}.
+        Servono almeno {minimo} giorni a settimana con almeno un orario di inizio partita{inizio ? `, entro il ${new Date(inizio).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}` : ' prima dell\'inizio'}. Per ora ne risultano {giorniAttuali}.
       </Muted>
       <Muted>
         Dal tuo profilo{compagno !== undefined ? ` e da quello di ${nomeCompagno ?? 'del compagno'} (fasce in comune)` : ''}: {giorniProposta} {giorniProposta === 1 ? 'giorno' : 'giorni'}.
