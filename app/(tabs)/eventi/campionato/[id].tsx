@@ -12,6 +12,7 @@ import { AvvisoDisponibilita } from '../../../../components/AvvisoDisponibilita'
 import { DisponibilitaIscrizione } from '../../../../components/DisponibilitaIscrizione';
 import { RiepilogoCampionato } from '../../../../components/RiepilogoCampionato';
 import { WelcomeKitCard } from '../../../../components/WelcomeKitCard';
+import { AccordoOrarioCard } from '../../../../components/AccordoOrario';
 import { contaGiorniUtili, giorniMinimi } from '../../../../lib/disponibilita';
 import { Card, Muted, IconButton, Segmented, Button } from '../../../../components/ui';
 import {
@@ -63,6 +64,8 @@ export default function CampionatoDettaglio() {
     [dettaglio, me]
   );
   const mioPartecipanteId = mioPartecipante?.id ?? null;
+  const latoMio = (m: { partecipante_a_id: string | null; partecipante_b_id: string | null }): 'a' | 'b' | null =>
+    !mioPartecipanteId ? null : m.partecipante_a_id === mioPartecipanteId ? 'a' : m.partecipante_b_id === mioPartecipanteId ? 'b' : null;
 
   // Quota di iscrizione (fix utente esplicito, "il buco dei pagamenti") —
   // stesso principio del dettaglio torneo.
@@ -281,6 +284,15 @@ export default function CampionatoDettaglio() {
 
         {/* 2. Giornate */}
         <Text style={s.sezioneTitolo}>Giornate</Text>
+        {calendarioPubblicato && (() => {
+          const daFare = dettaglio.match.filter((m) => m.accordo_orario && m.stato === 'programmato' && m.accordo_orario.stato !== 'concordato' && latoMio(m)
+            && !(m.accordo_orario.conferme?.[latoMio(m)!]));
+          return daFare.length > 0 ? (
+            <Card style={[s.card, s.avvisoAccordo]}>
+              <Text style={s.avvisoAccordoTesto}>⚠️ {daFare.length === 1 ? 'Una tua partita ha' : `${daFare.length} tue partite hanno`} l'orario da concordare con gli avversari: la trovi in rosso qui sotto.</Text>
+            </Card>
+          ) : null;
+        })()}
         {/* il centro verifica il calendario prima di pubblicarlo: i
             giocatori lo vedono solo a campionato avviato (fix utente
             esplicito) */}
@@ -296,6 +308,14 @@ export default function CampionatoDettaglio() {
                 <View key={m.id}>
                   {gironi.length > 1 && <Muted style={s.gironeTag}>{nomeGirone(m.girone_id)}</Muted>}
                   <RigaMatch match={m} nomeA={nomeDi(m.partecipante_a_id)} nomeB={nomeDi(m.partecipante_b_id)} onPress={m.bye ? undefined : () => setVotoMatch(m)} />
+                  {/* senza orari in comune: in rosso, e chi gioca se lo accorda qui (fix utente esplicito) */}
+                  {m.accordo_orario && m.stato === 'programmato' && (
+                    latoMio(m) ? (
+                      <AccordoOrarioCard matchId={m.id} accordo={m.accordo_orario} lato={latoMio(m)} onAggiornato={load} />
+                    ) : m.accordo_orario.stato !== 'concordato' ? (
+                      <Text style={s.daConcordare}>Orario da concordare tra le due squadre</Text>
+                    ) : null
+                  )}
                 </View>
               ))}
             </Card>
@@ -345,6 +365,9 @@ function makeStyles(colors: AppColors) {
     sezioneTitolo: { color: colors.navyDeep, fontSize: Font.h3, fontWeight: '800', marginBottom: Spacing.sm },
     giornataTitolo: { color: colors.slate, fontSize: Font.tiny, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
     gironeTag: { fontSize: Font.tiny, marginTop: 6 },
+    daConcordare: { color: colors.red, fontSize: Font.tiny, fontWeight: '700', marginTop: 2, marginBottom: 4 },
+    avvisoAccordo: { borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)', backgroundColor: 'rgba(239,68,68,0.08)' },
+    avvisoAccordoTesto: { color: colors.red, fontWeight: '700', fontSize: Font.small },
     campioneCard: {
       flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.lg, padding: Spacing.lg,
       borderRadius: Radius.card, backgroundColor: '#16253A', borderWidth: 1, borderColor: 'rgba(255,175,0,0.35)',

@@ -1916,6 +1916,18 @@ export async function aggiornaDisponibilitaIscrizione(
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+/** Orario di una partita di campionato senza orari in comune (fix utente
+ *  esplicito: "il più possibile gestibile tra i giocatori, il centro deve
+ *  solo vigilare"): la squadra conferma la proposta o ne fa un'altra.
+ *  chi = lato della propria squadra nella partita. */
+export async function accordoOrarioPartita(
+  matchId: string, azione: 'conferma' | 'proponi', chi: 'a' | 'b', giorno?: string, ora?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (isMock()) return { ok: true };
+  const { error } = await apiPost(`/campionati-match/${matchId}/accordo-orario`, { azione, chi, giorno: giorno ?? null, ora: ora ?? null });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 // ============================================================
 // Welcome Kit del campionato (fix utente esplicito): vantaggi degli
 // sponsor per gli iscritti. Le regole anti-abuso (solo iscritti,

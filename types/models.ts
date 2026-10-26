@@ -624,6 +624,16 @@ export interface CampionatoMatch {
   slot_prossimo_match: 'a' | 'b' | null;
   bye: boolean;
   created_at: string;
+  // partita senza orari in comune tra le due squadre: si accordano dall'app
+  // (vedi stars-system/backend/app/models/campionato.py:accordo_orario)
+  accordo_orario?: AccordoOrario | null;
+}
+
+export interface AccordoOrario {
+  metodo: 'giorno' | 'fascia' | 'bonus';
+  proposta: { giorno: string; ora: string; da: 'gestionale' | 'centro' | 'a' | 'b' } | null;
+  stato: 'attesa_centro' | 'da_concordare' | 'concordato';
+  conferme: { a: boolean; b: boolean };
 }
 
 export interface TorneoRound {
